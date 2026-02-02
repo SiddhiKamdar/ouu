@@ -1,143 +1,47 @@
-Image.java
+DummyAuthFilter.java
+package com.example.assignment.filter;
 
-package com.example.assignment.entity;
-
-import jakarta.persistence.*;
-
-@Entity
-@Table(name = "images")
-public class Image {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    private String imagePath;
-
-    public Image() {}
-
-    public Image(String imagePath) {
-        this.imagePath = imagePath;
-    }
-
-    public Long getId() {
-        return id;
-    }
-
-    public String getImagePath() {
-        return imagePath;
-    }
-
-    public void setImagePath(String imagePath) {
-        this.imagePath = imagePath;
-    }
-}
-
-ImageRepository.java
-package com.example.assignment.repository;
-
-import com.example.assignment.entity.Image;
-import org.springframework.data.jpa.repository.JpaRepository;
-
-public interface ImageRepository extends JpaRepository<Image, Long> {
-}
-
-ImageResponseDto.java
-package com.example.assignment.dto.response;
-
-public class ImageResponseDto {
-
-    private Long id;
-    private String imagePath;
-
-    public ImageResponseDto(Long id, String imagePath) {
-        this.id = id;
-        this.imagePath = imagePath;
-    }
-
-    public Long getId() {
-        return id;
-    }
-
-    public String getImagePath() {
-        return imagePath;
-    }
-}
-
-ImageController.java
-package com.example.assignment.controller;
-
-import com.example.assignment.dto.response.ImageResponseDto;
-import com.example.assignment.entity.Image;
-import com.example.assignment.exception.ResourceNotFoundException;
-import com.example.assignment.repository.ImageRepository;
-import org.springframework.cache.annotation.Cacheable;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 
-@RestController
-@RequestMapping("/images")
-public class ImageController {
+@Component
+public class DummyAuthFilter extends OncePerRequestFilter {
 
-    private final ImageRepository imageRepository;
+    private static final String AUTH_HEADER = "X-AUTH-TOKEN";
+    private static final String VALID_TOKEN = "my-secret-token";
 
-    private static final String IMAGE_DIR =
-            "C:/User/kamdasid/Desktop/Day 10 Assignment/assignment/src/main/resources/static/images/";
+    @Override
+    protected void doFilterInternal(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            FilterChain filterChain)
+            throws ServletException, IOException {
 
-    public ImageController(ImageRepository imageRepository) {
-        this.imageRepository = imageRepository;
-    }
-
-    // ✅ UPLOAD IMAGE (HEADER VERSIONING)
-    @PostMapping(
-            value = "/upload",
-            headers = "X-API-VERSION=2"
-    )
-    public ImageResponseDto uploadImage(@RequestParam("file") MultipartFile file)
-            throws IOException {
-
-        Files.createDirectories(Paths.get(IMAGE_DIR));
-
-        Path filePath = Paths.get(IMAGE_DIR + file.getOriginalFilename());
-        Files.write(filePath, file.getBytes());
-
-        Image image = new Image(filePath.toString());
-        Image savedImage = imageRepository.save(image);
-
-        return new ImageResponseDto(savedImage.getId(), savedImage.getImagePath());
-    }
-
-    // ✅ FETCH IMAGE (HEADER VERSIONING + CACHE)
-    @GetMapping(
-            value = "/{id}",
-            headers = "X-API-VERSION=2"
-    )
-    @Cacheable(value = "images", key = "#id")
-    public ResponseEntity<byte[]> getImage(@PathVariable Long id)
-            throws IOException {
-
-        Image image = imageRepository.findById(id)
-                .orElseThrow(() ->
-                        new ResourceNotFoundException("Image not found with id " + id));
-
-        Path path = Paths.get(image.getImagePath());
-
-        if (!Files.exists(path)) {
-            throw new ResourceNotFoundException("Image file not found on disk");
+        // Allow Swagger & static resources without auth
+        String path = request.getRequestURI();
+        if (path.contains("swagger")
+                || path.contains("api-docs")
+                || path.startsWith("/images")) {
+            filterChain.doFilter(request, response);
+            return;
         }
 
-        byte[] imageBytes = Files.readAllBytes(path);
-        String contentType = Files.probeContentType(path);
+        String token = request.getHeader(AUTH_HEADER);
 
-        return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_TYPE, contentType)
-                .body(imageBytes);
+        if (token == null || !token.equals(VALID_TOKEN)) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.getWriter().write("Unauthorized: Invalid or missing token");
+            return;
+        }
+
+        filterChain.doFilter(request, response);
     }
 }
+
+
