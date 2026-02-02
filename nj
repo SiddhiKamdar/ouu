@@ -1,56 +1,45 @@
-EmployeeImage.java
+Image.java
+
 package com.example.assignment.entity;
 
 import jakarta.persistence.*;
 
 @Entity
-@Table(name = "employee_images")
-public class EmployeeImage {
+@Table(name = "images")
+public class Image {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private String fileName;
-    private String contentType;
+    private String imagePath;
 
-    @Lob
-    private byte[] data;
+    public Image() {}
 
-    public EmployeeImage() {}
-
-    public EmployeeImage(String fileName, String contentType, byte[] data) {
-        this.fileName = fileName;
-        this.contentType = contentType;
-        this.data = data;
+    public Image(String imagePath) {
+        this.imagePath = imagePath;
     }
 
     public Long getId() {
         return id;
     }
 
-    public String getFileName() {
-        return fileName;
+    public String getImagePath() {
+        return imagePath;
     }
 
-    public String getContentType() {
-        return contentType;
-    }
-
-    public byte[] getData() {
-        return data;
+    public void setImagePath(String imagePath) {
+        this.imagePath = imagePath;
     }
 }
 
-
-EmployeeImageRepository.java
-
+ImageRepository.java
 package com.example.assignment.repository;
 
-import com.example.assignment.entity.EmployeeImage;
+import com.example.assignment.entity.Image;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-public interface EmployeeImageRepository extends JpaRepository<EmployeeImage, Long> {
+public interface ImageRepository extends JpaRepository<Image, Long> {
 }
 
 ImageResponseDto.java
@@ -59,19 +48,19 @@ package com.example.assignment.dto.response;
 public class ImageResponseDto {
 
     private Long id;
-    private String fileName;
+    private String imagePath;
 
-    public ImageResponseDto(Long id, String fileName) {
+    public ImageResponseDto(Long id, String imagePath) {
         this.id = id;
-        this.fileName = fileName;
+        this.imagePath = imagePath;
     }
 
     public Long getId() {
         return id;
     }
 
-    public String getFileName() {
-        return fileName;
+    public String getImagePath() {
+        return imagePath;
     }
 }
 
@@ -79,9 +68,9 @@ ImageController.java
 package com.example.assignment.controller;
 
 import com.example.assignment.dto.response.ImageResponseDto;
-import com.example.assignment.entity.EmployeeImage;
+import com.example.assignment.entity.Image;
 import com.example.assignment.exception.ResourceNotFoundException;
-import com.example.assignment.repository.EmployeeImageRepository;
+import com.example.assignment.repository.ImageRepository;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -89,49 +78,66 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 
 @RestController
 @RequestMapping("/images")
 public class ImageController {
 
-    private final EmployeeImageRepository imageRepository;
+    private final ImageRepository imageRepository;
 
-    public ImageController(EmployeeImageRepository imageRepository) {
+    private static final String IMAGE_DIR =
+            "C:/User/kamdasid/Desktop/Day 10 Assignment/assignment/src/main/resources/static/images/";
+
+    public ImageController(ImageRepository imageRepository) {
         this.imageRepository = imageRepository;
     }
 
+    // ✅ UPLOAD IMAGE (HEADER VERSIONING)
     @PostMapping(
             value = "/upload",
             headers = "X-API-VERSION=2"
     )
-    public ImageResponseDto uploadImageV2(
-            @RequestParam("file") MultipartFile file) throws IOException {
+    public ImageResponseDto uploadImage(@RequestParam("file") MultipartFile file)
+            throws IOException {
 
-        EmployeeImage image = new EmployeeImage(
-                file.getOriginalFilename(),
-                file.getContentType(),
-                file.getBytes()
-        );
+        Files.createDirectories(Paths.get(IMAGE_DIR));
 
-        EmployeeImage saved = imageRepository.save(image);
+        Path filePath = Paths.get(IMAGE_DIR + file.getOriginalFilename());
+        Files.write(filePath, file.getBytes());
 
-        return new ImageResponseDto(saved.getId(), saved.getFileName());
+        Image image = new Image(filePath.toString());
+        Image savedImage = imageRepository.save(image);
+
+        return new ImageResponseDto(savedImage.getId(), savedImage.getImagePath());
     }
 
+    // ✅ FETCH IMAGE (HEADER VERSIONING + CACHE)
     @GetMapping(
             value = "/{id}",
             headers = "X-API-VERSION=2"
     )
     @Cacheable(value = "images", key = "#id")
-    public ResponseEntity<byte[]> getImageV2(@PathVariable Long id) {
+    public ResponseEntity<byte[]> getImage(@PathVariable Long id)
+            throws IOException {
 
-        EmployeeImage image = imageRepository.findById(id)
+        Image image = imageRepository.findById(id)
                 .orElseThrow(() ->
                         new ResourceNotFoundException("Image not found with id " + id));
 
+        Path path = Paths.get(image.getImagePath());
+
+        if (!Files.exists(path)) {
+            throw new ResourceNotFoundException("Image file not found on disk");
+        }
+
+        byte[] imageBytes = Files.readAllBytes(path);
+        String contentType = Files.probeContentType(path);
+
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_TYPE, image.getContentType())
-                .body(image.getData());
+                .header(HttpHeaders.CONTENT_TYPE, contentType)
+                .body(imageBytes);
     }
 }
-
