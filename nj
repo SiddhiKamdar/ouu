@@ -1,29 +1,137 @@
-@PatchMapping("/{id}")
-public ResponseEntity<EmplyoeeResponseDTO> patchEmployee(
-        @PathVariable Long id,
-        @RequestBody EmployeeDto employeeDto) {
+EmployeeImage.java
+package com.example.assignment.entity;
 
-    Employee employee = employeeRepository.findById(id)
-            .orElseThrow(() ->
-                    new ResourceNotFoundException("Employee not found with id " + id));
+import jakarta.persistence.*;
 
-    if (employeeDto.getEmp_name() != null) {
-        employee.setEmp_name(employeeDto.getEmp_name());
+@Entity
+@Table(name = "employee_images")
+public class EmployeeImage {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String fileName;
+    private String contentType;
+
+    @Lob
+    private byte[] data;
+
+    public EmployeeImage() {}
+
+    public EmployeeImage(String fileName, String contentType, byte[] data) {
+        this.fileName = fileName;
+        this.contentType = contentType;
+        this.data = data;
     }
 
-    if (employeeDto.getEmp_mail() != null) {
-        employee.setEmp_mail(employeeDto.getEmp_mail());
+    public Long getId() {
+        return id;
     }
 
-    if (employeeDto.getEmp_image_url() != null) {
-        employee.setEmp_image_url(employeeDto.getEmp_image_url());
+    public String getFileName() {
+        return fileName;
     }
 
-    if (employeeDto.getEmp_contact_no() != null) {
-        employee.setEmp_contact_no(employeeDto.getEmp_contact_no());
+    public String getContentType() {
+        return contentType;
     }
 
-    Employee updatedEmployee = employeeRepository.save(employee);
-
-    return ResponseEntity.ok(EmployeeMapper.toDto(updatedEmployee));
+    public byte[] getData() {
+        return data;
+    }
 }
+
+
+EmployeeImageRepository.java
+
+package com.example.assignment.repository;
+
+import com.example.assignment.entity.EmployeeImage;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface EmployeeImageRepository extends JpaRepository<EmployeeImage, Long> {
+}
+
+ImageResponseDto.java
+package com.example.assignment.dto.response;
+
+public class ImageResponseDto {
+
+    private Long id;
+    private String fileName;
+
+    public ImageResponseDto(Long id, String fileName) {
+        this.id = id;
+        this.fileName = fileName;
+    }
+
+    public Long getId() {
+        return id;
+    }
+
+    public String getFileName() {
+        return fileName;
+    }
+}
+
+ImageController.java
+package com.example.assignment.controller;
+
+import com.example.assignment.dto.response.ImageResponseDto;
+import com.example.assignment.entity.EmployeeImage;
+import com.example.assignment.exception.ResourceNotFoundException;
+import com.example.assignment.repository.EmployeeImageRepository;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+
+@RestController
+@RequestMapping("/images")
+public class ImageController {
+
+    private final EmployeeImageRepository imageRepository;
+
+    public ImageController(EmployeeImageRepository imageRepository) {
+        this.imageRepository = imageRepository;
+    }
+
+    @PostMapping(
+            value = "/upload",
+            headers = "X-API-VERSION=2"
+    )
+    public ImageResponseDto uploadImageV2(
+            @RequestParam("file") MultipartFile file) throws IOException {
+
+        EmployeeImage image = new EmployeeImage(
+                file.getOriginalFilename(),
+                file.getContentType(),
+                file.getBytes()
+        );
+
+        EmployeeImage saved = imageRepository.save(image);
+
+        return new ImageResponseDto(saved.getId(), saved.getFileName());
+    }
+
+    @GetMapping(
+            value = "/{id}",
+            headers = "X-API-VERSION=2"
+    )
+    @Cacheable(value = "images", key = "#id")
+    public ResponseEntity<byte[]> getImageV2(@PathVariable Long id) {
+
+        EmployeeImage image = imageRepository.findById(id)
+                .orElseThrow(() ->
+                        new ResourceNotFoundException("Image not found with id " + id));
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_TYPE, image.getContentType())
+                .body(image.getData());
+    }
+}
+
