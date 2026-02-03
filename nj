@@ -1,220 +1,66 @@
-using System.ComponentModel.DataAnnotations;
-
-namespace SimpleStore.Models;
-
-public class Product
-{
-    public int Id { get; set; }
-
-    [Required]
-    public string Name { get; set; }
-
-    [Range(0.01, double.MaxValue)]
-    public decimal Price { get; set; }
-
-    public int Quantity { get; set; }
-
-    public string Category { get; set; }
-}
-
-Data/AppDbContext.cs
-using Microsoft.EntityFrameworkCore;
-using SimpleStore.Models;
-
-namespace SimpleStore.Data;
-
-public class AppDbContext : DbContext
-{
-    public AppDbContext(DbContextOptions<AppDbContext> options)
-        : base(options) { }
-
-    public DbSet<Product> Products { get; set; }
-}
-
-"ConnectionStrings": {
-  "DefaultConnection": "Server=.;Database=SimpleStoreDb;Trusted_Connection=True;TrustServerCertificate=True"
-}
-
-DAL/IProductRepository.cs
-using SimpleStore.Models;
-
-namespace SimpleStore.DAL;
-
-public interface IProductRepository
-{
-    List<Product> GetAll();
-    void Add(Product product);
-    int GetTotalCount();
-}
-
-DAL/ProductRepository.cs
-using SimpleStore.Data;
-using SimpleStore.Models;
-using System.Data.SqlClient;
-
-namespace SimpleStore.DAL;
-
-public class ProductRepository : IProductRepository
-{
-    private readonly AppDbContext _context;
-    private readonly IConfiguration _config;
-
-    public ProductRepository(AppDbContext context, IConfiguration config)
-    {
-        _context = context;
-        _config = config;
-    }
-
-    public List<Product> GetAll()
-        => _context.Products.ToList();
-
-    public void Add(Product product)
-    {
-        _context.Products.Add(product);
-        _context.SaveChanges();
-    }
-
-    public int GetTotalCount()
-    {
-        using SqlConnection con = new SqlConnection(
-            _config.GetConnectionString("DefaultConnection"));
-
-        SqlCommand cmd = new SqlCommand("SELECT COUNT(*) FROM Products", con);
-        con.Open();
-        return (int)cmd.ExecuteScalar();
-    }
-}
-
-BLL/IProductService.cs
-using SimpleStore.Models;
-
-namespace SimpleStore.BLL;
-
-public interface IProductService
-{
-    List<Product> GetProducts();
-    void Create(Product product);
-    int GetTotalCount();
-}
-
-
-📁 BLL/ProductService.cs
-using SimpleStore.DAL;
-using SimpleStore.Models;
-
-namespace SimpleStore.BLL;
-
-public class ProductService : IProductService
-{
-    private readonly IProductRepository _repo;
-
-    public ProductService(IProductRepository repo)
-    {
-        _repo = repo;
-    }
-
-    public List<Product> GetProducts()
-        => _repo.GetAll();
-
-    public void Create(Product product)
-    {
-        if (product.Name.Contains("price", StringComparison.OrdinalIgnoreCase))
-            throw new Exception("Product name cannot contain 'price'");
-
-        if (product.Price <= 0)
-            throw new Exception("Price must be positive");
-
-        _repo.Add(product);
-    }
-
-    public int GetTotalCount()
-        => _repo.GetTotalCount();
-}
-
-
-Program.cs
-using SimpleStore.DAL;
-using SimpleStore.BLL;
-
-builder.Services.AddScoped<IProductRepository, ProductRepository>();
-builder.Services.AddScoped<IProductService, ProductService>();
-
-Middleware/RequestLoggerMiddleware.cs
-namespace SimpleStore.Middleware;
-
-public class RequestLoggerMiddleware
-{
-    private readonly RequestDelegate _next;
-
-    public RequestLoggerMiddleware(RequestDelegate next)
-    {
-        _next = next;
-    }
-
-    public async Task Invoke(HttpContext context)
-    {
-        Console.WriteLine($"Request received at {DateTime.Now}");
-        await _next(context);
-    }
-}
-
-Controllers/ProductController.cs
-using Microsoft.AspNetCore.Mvc;
-using SimpleStore.BLL;
-using SimpleStore.Models;
-
-namespace SimpleStore.Controllers;
-
-public class ProductController : Controller
-{
-    private readonly IProductService _service;
-
-    public ProductController(IProductService service)
-    {
-        _service = service;
-    }
-
-    public IActionResult Index()
-    {
-        ViewBag.Total = _service.GetTotalCount();
-        return View(_service.GetProducts());
-    }
-
-    public IActionResult Create()
-        => View();
-
-    [HttpPost]
-    public IActionResult Create(Product product)
-    {
-        if (!ModelState.IsValid)
-            return View(product);
-
-        _service.Create(product);
-        return RedirectToAction(nameof(Index));
-    }
-}
-
-Views/Product/Index.cshtml
-@model List<SimpleStore.Models.Product>
-
-<h2>Total Products: @ViewBag.Total</h2>
-
-<div class="row">
-@foreach (var item in Model)
-{
-    <partial name="_ProductCard" model="item" />
-}
-</div>
-Views/Product/Create.cshtml
 @model SimpleStore.Models.Product
 
-<form asp-action="Create">
-    <input asp-for="Name" />
-    <span asp-validation-for="Name"></span>
+<h2 class="mb-4">Add New Product</h2>
 
-    <input asp-for="Price" />
-    <input asp-for="Quantity" />
-    <input asp-for="Category" />
+<div class="row">
+    <div class="col-md-6">
 
-    <button type="submit">Save</button>
-</form>
+        <form asp-action="Create" class="card p-4 shadow-sm">
+
+            <div class="mb-3">
+                <label asp-for="Name" class="form-label"></label>
+                <input asp-for="Name" class="form-control" placeholder="e.g. iPhone 15" />
+                <span asp-validation-for="Name" class="text-danger"></span>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="Price" class="form-label"></label>
+                <input asp-for="Price" class="form-control" placeholder="e.g. 79999" />
+                <span asp-validation-for="Price" class="text-danger"></span>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="Quantity" class="form-label"></label>
+                <input asp-for="Quantity" class="form-control" placeholder="e.g. 10" />
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="Category" class="form-label"></label>
+                <input asp-for="Category" class="form-control" placeholder="e.g. Electronics" />
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-success">
+                    Save Product
+                </button>
+
+                <a asp-action="Index" class="btn btn-secondary">
+                    Cancel
+                </a>
+            </div>
+
+        </form>
+
+    </div>
+</div>
+
+@model SimpleStore.Models.Product
+
+<div class="col-md-4 mb-4">
+    <div class="card h-100 shadow-sm">
+
+        <div class="card-body">
+            <h5 class="card-title">@Model.Name</h5>
+
+            <h6 class="card-subtitle mb-2 text-muted">
+                @Model.Category
+            </h6>
+
+            <p class="card-text">
+                <strong>Price:</strong> ₹@Model.Price <br />
+                <strong>Available:</strong> @Model.Quantity units
+            </p>
+        </div>
+
+    </div>
+</div>
