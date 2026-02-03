@@ -1,47 +1,220 @@
-DummyAuthFilter.java
-package com.example.assignment.filter;
+using System.ComponentModel.DataAnnotations;
 
-import jakarta.servlet.FilterChain;
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.stereotype.Component;
-import org.springframework.web.filter.OncePerRequestFilter;
+namespace SimpleStore.Models;
 
-import java.io.IOException;
+public class Product
+{
+    public int Id { get; set; }
 
-@Component
-public class DummyAuthFilter extends OncePerRequestFilter {
+    [Required]
+    public string Name { get; set; }
 
-    private static final String AUTH_HEADER = "X-AUTH-TOKEN";
-    private static final String VALID_TOKEN = "my-secret-token";
+    [Range(0.01, double.MaxValue)]
+    public decimal Price { get; set; }
 
-    @Override
-    protected void doFilterInternal(
-            HttpServletRequest request,
-            HttpServletResponse response,
-            FilterChain filterChain)
-            throws ServletException, IOException {
+    public int Quantity { get; set; }
 
-        // Allow Swagger & static resources without auth
-        String path = request.getRequestURI();
-        if (path.contains("swagger")
-                || path.contains("api-docs")
-                || path.startsWith("/images")) {
-            filterChain.doFilter(request, response);
-            return;
-        }
+    public string Category { get; set; }
+}
 
-        String token = request.getHeader(AUTH_HEADER);
+Data/AppDbContext.cs
+using Microsoft.EntityFrameworkCore;
+using SimpleStore.Models;
 
-        if (token == null || !token.equals(VALID_TOKEN)) {
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.getWriter().write("Unauthorized: Invalid or missing token");
-            return;
-        }
+namespace SimpleStore.Data;
 
-        filterChain.doFilter(request, response);
+public class AppDbContext : DbContext
+{
+    public AppDbContext(DbContextOptions<AppDbContext> options)
+        : base(options) { }
+
+    public DbSet<Product> Products { get; set; }
+}
+
+"ConnectionStrings": {
+  "DefaultConnection": "Server=.;Database=SimpleStoreDb;Trusted_Connection=True;TrustServerCertificate=True"
+}
+
+DAL/IProductRepository.cs
+using SimpleStore.Models;
+
+namespace SimpleStore.DAL;
+
+public interface IProductRepository
+{
+    List<Product> GetAll();
+    void Add(Product product);
+    int GetTotalCount();
+}
+
+DAL/ProductRepository.cs
+using SimpleStore.Data;
+using SimpleStore.Models;
+using System.Data.SqlClient;
+
+namespace SimpleStore.DAL;
+
+public class ProductRepository : IProductRepository
+{
+    private readonly AppDbContext _context;
+    private readonly IConfiguration _config;
+
+    public ProductRepository(AppDbContext context, IConfiguration config)
+    {
+        _context = context;
+        _config = config;
+    }
+
+    public List<Product> GetAll()
+        => _context.Products.ToList();
+
+    public void Add(Product product)
+    {
+        _context.Products.Add(product);
+        _context.SaveChanges();
+    }
+
+    public int GetTotalCount()
+    {
+        using SqlConnection con = new SqlConnection(
+            _config.GetConnectionString("DefaultConnection"));
+
+        SqlCommand cmd = new SqlCommand("SELECT COUNT(*) FROM Products", con);
+        con.Open();
+        return (int)cmd.ExecuteScalar();
     }
 }
 
+BLL/IProductService.cs
+using SimpleStore.Models;
 
+namespace SimpleStore.BLL;
+
+public interface IProductService
+{
+    List<Product> GetProducts();
+    void Create(Product product);
+    int GetTotalCount();
+}
+
+
+📁 BLL/ProductService.cs
+using SimpleStore.DAL;
+using SimpleStore.Models;
+
+namespace SimpleStore.BLL;
+
+public class ProductService : IProductService
+{
+    private readonly IProductRepository _repo;
+
+    public ProductService(IProductRepository repo)
+    {
+        _repo = repo;
+    }
+
+    public List<Product> GetProducts()
+        => _repo.GetAll();
+
+    public void Create(Product product)
+    {
+        if (product.Name.Contains("price", StringComparison.OrdinalIgnoreCase))
+            throw new Exception("Product name cannot contain 'price'");
+
+        if (product.Price <= 0)
+            throw new Exception("Price must be positive");
+
+        _repo.Add(product);
+    }
+
+    public int GetTotalCount()
+        => _repo.GetTotalCount();
+}
+
+
+Program.cs
+using SimpleStore.DAL;
+using SimpleStore.BLL;
+
+builder.Services.AddScoped<IProductRepository, ProductRepository>();
+builder.Services.AddScoped<IProductService, ProductService>();
+
+Middleware/RequestLoggerMiddleware.cs
+namespace SimpleStore.Middleware;
+
+public class RequestLoggerMiddleware
+{
+    private readonly RequestDelegate _next;
+
+    public RequestLoggerMiddleware(RequestDelegate next)
+    {
+        _next = next;
+    }
+
+    public async Task Invoke(HttpContext context)
+    {
+        Console.WriteLine($"Request received at {DateTime.Now}");
+        await _next(context);
+    }
+}
+
+Controllers/ProductController.cs
+using Microsoft.AspNetCore.Mvc;
+using SimpleStore.BLL;
+using SimpleStore.Models;
+
+namespace SimpleStore.Controllers;
+
+public class ProductController : Controller
+{
+    private readonly IProductService _service;
+
+    public ProductController(IProductService service)
+    {
+        _service = service;
+    }
+
+    public IActionResult Index()
+    {
+        ViewBag.Total = _service.GetTotalCount();
+        return View(_service.GetProducts());
+    }
+
+    public IActionResult Create()
+        => View();
+
+    [HttpPost]
+    public IActionResult Create(Product product)
+    {
+        if (!ModelState.IsValid)
+            return View(product);
+
+        _service.Create(product);
+        return RedirectToAction(nameof(Index));
+    }
+}
+
+Views/Product/Index.cshtml
+@model List<SimpleStore.Models.Product>
+
+<h2>Total Products: @ViewBag.Total</h2>
+
+<div class="row">
+@foreach (var item in Model)
+{
+    <partial name="_ProductCard" model="item" />
+}
+</div>
+Views/Product/Create.cshtml
+@model SimpleStore.Models.Product
+
+<form asp-action="Create">
+    <input asp-for="Name" />
+    <span asp-validation-for="Name"></span>
+
+    <input asp-for="Price" />
+    <input asp-for="Quantity" />
+    <input asp-for="Category" />
+
+    <button type="submit">Save</button>
+</form>
