@@ -1,43 +1,20 @@
-package com.example.backend.entity;
+package com.example.backend.dto.request;
 
-import jakarta.persistence.*;
 import java.util.Date;
 
-@Entity
-@Table(name = "travel_details")
-public class Travel {
+public class TravelRequestDTO {
 
-    @Id
-    @Column(name = "travel_id")
-    private Long travelId;
-
-    @ManyToOne
-    @JoinColumn(name = "employee_id")
-    private Employee employee;
-
-    @Column(name = "destination")
+    private Long employeeId;
     private String destination;
-
-    @Column(name = "depart_date")
     private Date departDate;
-
-    @Column(name = "return_date")
     private Date returnDate;
 
-    public Long getTravelId() {
-        return travelId;
+    public Long getEmployeeId() {
+        return employeeId;
     }
 
-    public void setTravelId(Long travelId) {
-        this.travelId = travelId;
-    }
-
-    public Employee getEmployee() {
-        return employee;
-    }
-
-    public void setEmployee(Employee employee) {
-        this.employee = employee;
+    public void setEmployeeId(Long employeeId) {
+        this.employeeId = employeeId;
     }
 
     public String getDestination() {
@@ -65,95 +42,22 @@ public class Travel {
     }
 }
 
-package com.example.backend.entity;
-
-import jakarta.persistence.*;
-
-@Entity
-@Table(name = "employees")
-public class Employee {
-
-    @Id
-    @Column(name = "employee_id")
-    private Long employeeId;
-
-    @Column(name = "full_name")
-    private String fullName;
-
-    public Long getEmployeeId() {
-        return employeeId;
-    }
-
-    public void setEmployeeId(Long employeeId) {
-        this.employeeId = employeeId;
-    }
-
-    public String getFullName() {
-        return fullName;
-    }
-
-    public void setFullName(String fullName) {
-        this.fullName = fullName;
-    }
-}
-
-package com.example.backend.dto.response;
-
-import java.util.Date;
-
-public class TravelResponseDTO {
-
-    private Long travelId;
-    private String fullName;
-    private String destination;
-    private Date departDate;
-    private Date returnDate;
-
-    public TravelResponseDTO(Long travelId, String fullName,
-                             String destination, Date departDate,
-                             Date returnDate) {
-        this.travelId = travelId;
-        this.fullName = fullName;
-        this.destination = destination;
-        this.departDate = departDate;
-        this.returnDate = returnDate;
-    }
-
-    public Long getTravelId() {
-        return travelId;
-    }
-
-    public String getFullName() {
-        return fullName;
-    }
-
-    public String getDestination() {
-        return destination;
-    }
-
-    public Date getDepartDate() {
-        return departDate;
-    }
-
-    public Date getReturnDate() {
-        return returnDate;
-    }
-}
-
 package com.example.backend.repository;
 
-import com.example.backend.entity.Travel;
+import com.example.backend.entity.Employee;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.stereotype.Repository;
 
-@Repository
-public interface TravelModuleRepository extends JpaRepository<Travel, Long> {
+public interface EmployeeRepository extends JpaRepository<Employee, Long> {
 }
+
 
 package com.example.backend.service;
 
+import com.example.backend.dto.request.TravelRequestDTO;
 import com.example.backend.dto.response.TravelResponseDTO;
+import com.example.backend.entity.Employee;
 import com.example.backend.entity.Travel;
+import com.example.backend.repository.EmployeeRepository;
 import com.example.backend.repository.TravelModuleRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -164,26 +68,89 @@ import java.util.List;
 public class TravelModuleService {
 
     @Autowired
-    private TravelModuleRepository travelModuleRepository;
+    private TravelModuleRepository travelRepository;
 
+    @Autowired
+    private EmployeeRepository employeeRepository;
+
+    // ✅ GET ALL
     public List<TravelResponseDTO> getAllTravels() {
 
-        List<Travel> travels = travelModuleRepository.findAll();
-
-        return travels.stream()
-                .map(travel -> new TravelResponseDTO(
-                        travel.getTravelId(),
-                        travel.getEmployee().getFullName(),
-                        travel.getDestination(),
-                        travel.getDepartDate(),
-                        travel.getReturnDate()
-                ))
+        return travelRepository.findAll()
+                .stream()
+                .map(this::mapToDTO)
                 .toList();
+    }
+
+    // ✅ GET BY ID
+    public TravelResponseDTO getTravelById(Long id) {
+
+        Travel travel = travelRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Travel not found"));
+
+        return mapToDTO(travel);
+    }
+
+    // ✅ CREATE
+    public TravelResponseDTO createTravel(TravelRequestDTO request) {
+
+        Employee employee = employeeRepository.findById(request.getEmployeeId())
+                .orElseThrow(() -> new RuntimeException("Employee not found"));
+
+        Travel travel = new Travel();
+        travel.setEmployee(employee);
+        travel.setDestination(request.getDestination());
+        travel.setDepartDate(request.getDepartDate());
+        travel.setReturnDate(request.getReturnDate());
+
+        Travel saved = travelRepository.save(travel);
+
+        return mapToDTO(saved);
+    }
+
+    // ✅ UPDATE
+    public TravelResponseDTO updateTravel(Long id, TravelRequestDTO request) {
+
+        Travel travel = travelRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Travel not found"));
+
+        Employee employee = employeeRepository.findById(request.getEmployeeId())
+                .orElseThrow(() -> new RuntimeException("Employee not found"));
+
+        travel.setEmployee(employee);
+        travel.setDestination(request.getDestination());
+        travel.setDepartDate(request.getDepartDate());
+        travel.setReturnDate(request.getReturnDate());
+
+        Travel updated = travelRepository.save(travel);
+
+        return mapToDTO(updated);
+    }
+
+    // ✅ DELETE
+    public void deleteTravel(Long id) {
+
+        Travel travel = travelRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Travel not found"));
+
+        travelRepository.delete(travel);
+    }
+
+    // 🔥 Mapping Method
+    private TravelResponseDTO mapToDTO(Travel travel) {
+        return new TravelResponseDTO(
+                travel.getTravelId(),
+                travel.getEmployee().getFullName(),
+                travel.getDestination(),
+                travel.getDepartDate(),
+                travel.getReturnDate()
+        );
     }
 }
 
 package com.example.backend.controller;
 
+import com.example.backend.dto.request.TravelRequestDTO;
 import com.example.backend.dto.response.TravelResponseDTO;
 import com.example.backend.service.TravelModuleService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -199,9 +166,37 @@ public class TravelModuleController {
     @Autowired
     private TravelModuleService travelModuleService;
 
-    @GetMapping("/get-all-travels")
+    // ✅ GET ALL
+    @GetMapping
     public ResponseEntity<List<TravelResponseDTO>> getAllTravels() {
         return ResponseEntity.ok(travelModuleService.getAllTravels());
+    }
+
+    // ✅ GET BY ID
+    @GetMapping("/{id}")
+    public ResponseEntity<TravelResponseDTO> getTravelById(@PathVariable Long id) {
+        return ResponseEntity.ok(travelModuleService.getTravelById(id));
+    }
+
+    // ✅ CREATE
+    @PostMapping
+    public ResponseEntity<TravelResponseDTO> createTravel(@RequestBody TravelRequestDTO request) {
+        return ResponseEntity.ok(travelModuleService.createTravel(request));
+    }
+
+    // ✅ UPDATE
+    @PutMapping("/{id}")
+    public ResponseEntity<TravelResponseDTO> updateTravel(
+            @PathVariable Long id,
+            @RequestBody TravelRequestDTO request) {
+        return ResponseEntity.ok(travelModuleService.updateTravel(id, request));
+    }
+
+    // ✅ DELETE
+    @DeleteMapping("/{id}")
+    public ResponseEntity<String> deleteTravel(@PathVariable Long id) {
+        travelModuleService.deleteTravel(id);
+        return ResponseEntity.ok("Travel deleted successfully");
     }
 }
 
