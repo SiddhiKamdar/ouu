@@ -1,202 +1,61 @@
-package com.example.backend.dto.request;
+package com.example.backend.entity;
 
+import jakarta.persistence.*;
 import java.util.Date;
 
-public class TravelRequestDTO {
+@Entity
+@Table(name = "employees")
+public class Employee {
 
-    private Long employeeId;
-    private String destination;
-    private Date departDate;
-    private Date returnDate;
+    @Id
+    @Column(name = "employee_id")
+    private Long employeeId;   // DB is int → Long is fine
 
-    public Long getEmployeeId() {
-        return employeeId;
-    }
+    @Column(name = "full_name")
+    private String fullName;
 
-    public void setEmployeeId(Long employeeId) {
-        this.employeeId = employeeId;
-    }
+    @Column(name = "joining_date")
+    private Date joiningDate;
 
-    public String getDestination() {
-        return destination;
-    }
+    @Column(name = "date_of_birth")
+    private Date dateOfBirth;
 
-    public void setDestination(String destination) {
-        this.destination = destination;
-    }
+    @Column(name = "email")
+    private String email;
 
-    public Date getDepartDate() {
-        return departDate;
-    }
+    @Column(name = "password")
+    private String password;
 
-    public void setDepartDate(Date departDate) {
-        this.departDate = departDate;
-    }
+    @Column(name = "contact_number")
+    private String contactNumber;
 
-    public Date getReturnDate() {
-        return returnDate;
-    }
+    @Column(name = "emergency_contact")
+    private String emergencyContact;
 
-    public void setReturnDate(Date returnDate) {
-        this.returnDate = returnDate;
-    }
-}
+    @Column(name = "address")
+    private String address;
 
-package com.example.backend.repository;
+    @Column(name = "profile_picture_url")
+    private String profilePictureUrl;
 
-import com.example.backend.entity.Employee;
-import org.springframework.data.jpa.repository.JpaRepository;
+    // 🔥 Self Join (Supervisor)
+    @ManyToOne
+    @JoinColumn(name = "supervisor_id")
+    private Employee supervisor;
 
-public interface EmployeeRepository extends JpaRepository<Employee, Long> {
-}
+    // If department, position, role are separate tables,
+    // you should map them with @ManyToOne as well.
+    // For now, if they are just int columns:
 
+    @Column(name = "department_id")
+    private Long departmentId;
 
-package com.example.backend.service;
+    @Column(name = "position_id")
+    private Long positionId;
 
-import com.example.backend.dto.request.TravelRequestDTO;
-import com.example.backend.dto.response.TravelResponseDTO;
-import com.example.backend.entity.Employee;
-import com.example.backend.entity.Travel;
-import com.example.backend.repository.EmployeeRepository;
-import com.example.backend.repository.TravelModuleRepository;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
+    @Column(name = "role_id")
+    private Long roleId;
 
-import java.util.List;
-
-@Service
-public class TravelModuleService {
-
-    @Autowired
-    private TravelModuleRepository travelRepository;
-
-    @Autowired
-    private EmployeeRepository employeeRepository;
-
-    // ✅ GET ALL
-    public List<TravelResponseDTO> getAllTravels() {
-
-        return travelRepository.findAll()
-                .stream()
-                .map(this::mapToDTO)
-                .toList();
-    }
-
-    // ✅ GET BY ID
-    public TravelResponseDTO getTravelById(Long id) {
-
-        Travel travel = travelRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Travel not found"));
-
-        return mapToDTO(travel);
-    }
-
-    // ✅ CREATE
-    public TravelResponseDTO createTravel(TravelRequestDTO request) {
-
-        Employee employee = employeeRepository.findById(request.getEmployeeId())
-                .orElseThrow(() -> new RuntimeException("Employee not found"));
-
-        Travel travel = new Travel();
-        travel.setEmployee(employee);
-        travel.setDestination(request.getDestination());
-        travel.setDepartDate(request.getDepartDate());
-        travel.setReturnDate(request.getReturnDate());
-
-        Travel saved = travelRepository.save(travel);
-
-        return mapToDTO(saved);
-    }
-
-    // ✅ UPDATE
-    public TravelResponseDTO updateTravel(Long id, TravelRequestDTO request) {
-
-        Travel travel = travelRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Travel not found"));
-
-        Employee employee = employeeRepository.findById(request.getEmployeeId())
-                .orElseThrow(() -> new RuntimeException("Employee not found"));
-
-        travel.setEmployee(employee);
-        travel.setDestination(request.getDestination());
-        travel.setDepartDate(request.getDepartDate());
-        travel.setReturnDate(request.getReturnDate());
-
-        Travel updated = travelRepository.save(travel);
-
-        return mapToDTO(updated);
-    }
-
-    // ✅ DELETE
-    public void deleteTravel(Long id) {
-
-        Travel travel = travelRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Travel not found"));
-
-        travelRepository.delete(travel);
-    }
-
-    // 🔥 Mapping Method
-    private TravelResponseDTO mapToDTO(Travel travel) {
-        return new TravelResponseDTO(
-                travel.getTravelId(),
-                travel.getEmployee().getFullName(),
-                travel.getDestination(),
-                travel.getDepartDate(),
-                travel.getReturnDate()
-        );
-    }
-}
-
-package com.example.backend.controller;
-
-import com.example.backend.dto.request.TravelRequestDTO;
-import com.example.backend.dto.response.TravelResponseDTO;
-import com.example.backend.service.TravelModuleService;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
-
-@RestController
-@RequestMapping("/travel")
-public class TravelModuleController {
-
-    @Autowired
-    private TravelModuleService travelModuleService;
-
-    // ✅ GET ALL
-    @GetMapping
-    public ResponseEntity<List<TravelResponseDTO>> getAllTravels() {
-        return ResponseEntity.ok(travelModuleService.getAllTravels());
-    }
-
-    // ✅ GET BY ID
-    @GetMapping("/{id}")
-    public ResponseEntity<TravelResponseDTO> getTravelById(@PathVariable Long id) {
-        return ResponseEntity.ok(travelModuleService.getTravelById(id));
-    }
-
-    // ✅ CREATE
-    @PostMapping
-    public ResponseEntity<TravelResponseDTO> createTravel(@RequestBody TravelRequestDTO request) {
-        return ResponseEntity.ok(travelModuleService.createTravel(request));
-    }
-
-    // ✅ UPDATE
-    @PutMapping("/{id}")
-    public ResponseEntity<TravelResponseDTO> updateTravel(
-            @PathVariable Long id,
-            @RequestBody TravelRequestDTO request) {
-        return ResponseEntity.ok(travelModuleService.updateTravel(id, request));
-    }
-
-    // ✅ DELETE
-    @DeleteMapping("/{id}")
-    public ResponseEntity<String> deleteTravel(@PathVariable Long id) {
-        travelModuleService.deleteTravel(id);
-        return ResponseEntity.ok("Travel deleted successfully");
-    }
+    // Getters & Setters (generate normally)
 }
 
