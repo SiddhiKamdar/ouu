@@ -1,61 +1,65 @@
+@ManyToOne
+@JoinColumn(name = "department_id")
+private Department department;
+
+@ManyToOne
+@JoinColumn(name = "position_id")
+private Position position;
+
+@ManyToOne
+@JoinColumn(name = "role_id")
+private Role role;
+
 package com.example.backend.entity;
 
 import jakarta.persistence.*;
-import java.util.Date;
 
 @Entity
-@Table(name = "employees")
-public class Employee {
+@Table(name = "departments")
+public class Department {
 
     @Id
-    @Column(name = "employee_id")
-    private Long employeeId;   // DB is int → Long is fine
-
-    @Column(name = "full_name")
-    private String fullName;
-
-    @Column(name = "joining_date")
-    private Date joiningDate;
-
-    @Column(name = "date_of_birth")
-    private Date dateOfBirth;
-
-    @Column(name = "email")
-    private String email;
-
-    @Column(name = "password")
-    private String password;
-
-    @Column(name = "contact_number")
-    private String contactNumber;
-
-    @Column(name = "emergency_contact")
-    private String emergencyContact;
-
-    @Column(name = "address")
-    private String address;
-
-    @Column(name = "profile_picture_url")
-    private String profilePictureUrl;
-
-    // 🔥 Self Join (Supervisor)
-    @ManyToOne
-    @JoinColumn(name = "supervisor_id")
-    private Employee supervisor;
-
-    // If department, position, role are separate tables,
-    // you should map them with @ManyToOne as well.
-    // For now, if they are just int columns:
-
     @Column(name = "department_id")
     private Long departmentId;
 
-    @Column(name = "position_id")
-    private Long positionId;
+    @Column(name = "department_name")
+    private String departmentName;
 
+    // getters and setters
+}
+
+package com.example.backend.entity;
+
+import jakarta.persistence.*;
+
+@Entity
+@Table(name = "roles")
+public class Role {
+
+    @Id
     @Column(name = "role_id")
     private Long roleId;
 
-    // Getters & Setters (generate normally)
+    @Column(name = "role_name")
+    private String roleName;
+
+    // getters and setters
 }
 
+package com.example.backend.entity;
+
+import jakarta.persistence.*;
+
+@Entity
+@Table(name = "positions")
+public class Position {
+
+    @Id
+    @Column(name = "position_id")
+    private Long positionId;
+
+    @Column(name = "position_name")
+    private String positionName;
+
+    // getters and setters
+}
