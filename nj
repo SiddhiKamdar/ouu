@@ -1,313 +1,207 @@
-<dependency>
-    <groupId>com.microsoft.sqlserver</groupId>
-    <artifactId>mssql-jdbc</artifactId>
-    <version>12.6.1.jre17</version>
-</dependency>
+package com.example.backend.entity;
 
-dto/request/ApplySlotRequest.java
-package com.example.backend.dto.request;
+import jakarta.persistence.*;
+import java.util.Date;
 
-import java.util.List;
+@Entity
+@Table(name = "travel_details")
+public class Travel {
 
-public class ApplySlotRequest {
+    @Id
+    @Column(name = "travel_id")
+    private Long travelId;
 
-    private int slotId;
-    private int leaderEmpId;
-    private List<Integer> members;
+    @ManyToOne
+    @JoinColumn(name = "employee_id")
+    private Employee employee;
 
-    public int getSlotId() {
-        return slotId;
+    @Column(name = "destination")
+    private String destination;
+
+    @Column(name = "depart_date")
+    private Date departDate;
+
+    @Column(name = "return_date")
+    private Date returnDate;
+
+    public Long getTravelId() {
+        return travelId;
     }
 
-    public void setSlotId(int slotId) {
-        this.slotId = slotId;
+    public void setTravelId(Long travelId) {
+        this.travelId = travelId;
     }
 
-    public int getLeaderEmpId() {
-        return leaderEmpId;
+    public Employee getEmployee() {
+        return employee;
     }
 
-    public void setLeaderEmpId(int leaderEmpId) {
-        this.leaderEmpId = leaderEmpId;
+    public void setEmployee(Employee employee) {
+        this.employee = employee;
     }
 
-    public List<Integer> getMembers() {
-        return members;
+    public String getDestination() {
+        return destination;
     }
 
-    public void setMembers(List<Integer> members) {
-        this.members = members;
+    public void setDestination(String destination) {
+        this.destination = destination;
+    }
+
+    public Date getDepartDate() {
+        return departDate;
+    }
+
+    public void setDepartDate(Date departDate) {
+        this.departDate = departDate;
+    }
+
+    public Date getReturnDate() {
+        return returnDate;
+    }
+
+    public void setReturnDate(Date returnDate) {
+        this.returnDate = returnDate;
     }
 }
 
-dto/request/CancelBookingRequest.java
-package com.example.backend.dto.request;
+package com.example.backend.entity;
 
-public class CancelBookingRequest {
+import jakarta.persistence.*;
 
-    private int slotId;
-    private int cancelledByEmpId;
+@Entity
+@Table(name = "employees")
+public class Employee {
 
-    public int getSlotId() {
-        return slotId;
+    @Id
+    @Column(name = "employee_id")
+    private Long employeeId;
+
+    @Column(name = "full_name")
+    private String fullName;
+
+    public Long getEmployeeId() {
+        return employeeId;
     }
 
-    public void setSlotId(int slotId) {
-        this.slotId = slotId;
+    public void setEmployeeId(Long employeeId) {
+        this.employeeId = employeeId;
     }
 
-    public int getCancelledByEmpId() {
-        return cancelledByEmpId;
+    public String getFullName() {
+        return fullName;
     }
 
-    public void setCancelledByEmpId(int cancelledByEmpId) {
-        this.cancelledByEmpId = cancelledByEmpId;
+    public void setFullName(String fullName) {
+        this.fullName = fullName;
     }
 }
 
-dto/response/GameResponse.java
 package com.example.backend.dto.response;
 
-public class GameResponse {
+import java.util.Date;
 
-    private int gameId;
-    private String gameName;
+public class TravelResponseDTO {
 
-    public GameResponse(int gameId, String gameName) {
-        this.gameId = gameId;
-        this.gameName = gameName;
+    private Long travelId;
+    private String fullName;
+    private String destination;
+    private Date departDate;
+    private Date returnDate;
+
+    public TravelResponseDTO(Long travelId, String fullName,
+                             String destination, Date departDate,
+                             Date returnDate) {
+        this.travelId = travelId;
+        this.fullName = fullName;
+        this.destination = destination;
+        this.departDate = departDate;
+        this.returnDate = returnDate;
     }
 
-    public int getGameId() {
-        return gameId;
+    public Long getTravelId() {
+        return travelId;
     }
 
-    public String getGameName() {
-        return gameName;
+    public String getFullName() {
+        return fullName;
+    }
+
+    public String getDestination() {
+        return destination;
+    }
+
+    public Date getDepartDate() {
+        return departDate;
+    }
+
+    public Date getReturnDate() {
+        return returnDate;
     }
 }
 
-dto/response/SlotResponse.java
-package com.example.backend.dto.response;
-
-public class SlotResponse {
-
-    private int slotId;
-    private String slotDate;
-    private String startTime;
-    private String endTime;
-    private String status;
-
-    public SlotResponse(int slotId, String slotDate,
-                        String startTime, String endTime,
-                        String status) {
-        this.slotId = slotId;
-        this.slotDate = slotDate;
-        this.startTime = startTime;
-        this.endTime = endTime;
-        this.status = status;
-    }
-
-    public int getSlotId() { return slotId; }
-    public String getSlotDate() { return slotDate; }
-    public String getStartTime() { return startTime; }
-    public String getEndTime() { return endTime; }
-    public String getStatus() { return status; }
-}
-
-repository/GameSchedulingRepository.java
 package com.example.backend.repository;
 
-import com.example.backend.dto.request.ApplySlotRequest;
-import com.example.backend.dto.response.GameResponse;
-import com.example.backend.dto.response.SlotResponse;
-import com.microsoft.sqlserver.jdbc.SQLServerCallableStatement;
-import com.microsoft.sqlserver.jdbc.SQLServerDataTable;
-import org.springframework.jdbc.core.JdbcTemplate;
+import com.example.backend.entity.Travel;
+import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
-import java.sql.Connection;
-import java.sql.Types;
-import java.util.List;
-
 @Repository
-public class GameSchedulingRepository {
-
-    private final JdbcTemplate jdbcTemplate;
-
-    public GameSchedulingRepository(JdbcTemplate jdbcTemplate) {
-        this.jdbcTemplate = jdbcTemplate;
-    }
-
-    // ---------------- READ ----------------
-
-    public List<GameResponse> getGames() {
-        return jdbcTemplate.query(
-                "EXEC GetGames",
-                (rs, rowNum) ->
-                        new GameResponse(
-                                rs.getInt("game_id"),
-                                rs.getString("game_name")
-                        )
-        );
-    }
-
-    public List<SlotResponse> getAvailableSlots(int gameId) {
-        return jdbcTemplate.query(
-                "EXEC GetAvailableSlots @game_id = ?",
-                new Object[]{gameId},
-                (rs, rowNum) ->
-                        new SlotResponse(
-                                rs.getInt("slot_id"),
-                                rs.getString("slot_date"),
-                                rs.getString("start_time"),
-                                rs.getString("end_time"),
-                                rs.getString("status")
-                        )
-        );
-    }
-
-    // ---------------- APPLY (TVP) ----------------
-
-    public void applyForSlot(ApplySlotRequest request) {
-
-        jdbcTemplate.execute((Connection connection) -> {
-
-            SQLServerDataTable tvp = new SQLServerDataTable();
-            tvp.addColumnMetadata("emp_id", Types.INTEGER);
-
-            for (Integer memberId : request.getMembers()) {
-                tvp.addRow(memberId);
-            }
-
-            SQLServerCallableStatement cs =
-                    (SQLServerCallableStatement)
-                            connection.prepareCall("{call ApplyForSlot(?, ?, ?)}");
-
-            cs.setInt(1, request.getSlotId());
-            cs.setInt(2, request.getLeaderEmpId());
-
-            cs.setStructured(3, "TeamMemberTableType", tvp);
-
-            cs.execute();
-
-            return null;
-        });
-    }
-
-    // ---------------- CANCEL ----------------
-
-    public void cancelBooking(int slotId, int cancelledByEmpId) {
-        jdbcTemplate.update(
-                "EXEC CancelBooking @slot_id = ?, @cancelled_by_emp_id = ?",
-                slotId,
-                cancelledByEmpId
-        );
-    }
-
-    // ---------------- COMPLETE ----------------
-
-    public void completeSlot(int slotId) {
-        jdbcTemplate.update(
-                "EXEC CompleteSlot @slot_id = ?",
-                slotId
-        );
-    }
+public interface TravelModuleRepository extends JpaRepository<Travel, Long> {
 }
 
-service/GameSchedulingService.java
 package com.example.backend.service;
 
-import com.example.backend.dto.request.ApplySlotRequest;
-import com.example.backend.dto.request.CancelBookingRequest;
-import com.example.backend.dto.response.GameResponse;
-import com.example.backend.dto.response.SlotResponse;
-import com.example.backend.repository.GameSchedulingRepository;
+import com.example.backend.dto.response.TravelResponseDTO;
+import com.example.backend.entity.Travel;
+import com.example.backend.repository.TravelModuleRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 
 @Service
-public class GameSchedulingService {
+public class TravelModuleService {
 
-    private final GameSchedulingRepository repository;
+    @Autowired
+    private TravelModuleRepository travelModuleRepository;
 
-    public GameSchedulingService(GameSchedulingRepository repository) {
-        this.repository = repository;
-    }
+    public List<TravelResponseDTO> getAllTravels() {
 
-    public List<GameResponse> getGames() {
-        return repository.getGames();
-    }
+        List<Travel> travels = travelModuleRepository.findAll();
 
-    public List<SlotResponse> getAvailableSlots(int gameId) {
-        return repository.getAvailableSlots(gameId);
-    }
-
-    public void applyForSlot(ApplySlotRequest request) {
-        repository.applyForSlot(request);
-    }
-
-    public void cancelBooking(CancelBookingRequest request) {
-        repository.cancelBooking(
-                request.getSlotId(),
-                request.getCancelledByEmpId()
-        );
-    }
-
-    public void completeSlot(int slotId) {
-        repository.completeSlot(slotId);
+        return travels.stream()
+                .map(travel -> new TravelResponseDTO(
+                        travel.getTravelId(),
+                        travel.getEmployee().getFullName(),
+                        travel.getDestination(),
+                        travel.getDepartDate(),
+                        travel.getReturnDate()
+                ))
+                .toList();
     }
 }
 
-controller/GameSchedulingController.java
 package com.example.backend.controller;
 
-import com.example.backend.dto.request.ApplySlotRequest;
-import com.example.backend.dto.request.CancelBookingRequest;
-import com.example.backend.dto.response.GameResponse;
-import com.example.backend.dto.response.SlotResponse;
-import com.example.backend.service.GameSchedulingService;
+import com.example.backend.dto.response.TravelResponseDTO;
+import com.example.backend.service.TravelModuleService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/schedule")
-public class GameSchedulingController {
+@RequestMapping("/travel")
+public class TravelModuleController {
 
-    private final GameSchedulingService service;
+    @Autowired
+    private TravelModuleService travelModuleService;
 
-    public GameSchedulingController(GameSchedulingService service) {
-        this.service = service;
-    }
-
-    @GetMapping("/games")
-    public List<GameResponse> getGames() {
-        return service.getGames();
-    }
-
-    @GetMapping("/slots/{gameId}")
-    public List<SlotResponse> getSlots(@PathVariable int gameId) {
-        return service.getAvailableSlots(gameId);
-    }
-
-    @PostMapping("/apply")
-    public ResponseEntity<String> apply(@RequestBody ApplySlotRequest request) {
-        service.applyForSlot(request);
-        return ResponseEntity.ok("Applied successfully");
-    }
-
-    @PostMapping("/cancel")
-    public ResponseEntity<String> cancel(@RequestBody CancelBookingRequest request) {
-        service.cancelBooking(request);
-        return ResponseEntity.ok("Cancelled successfully");
-    }
-
-    @PostMapping("/complete/{slotId}")
-    public ResponseEntity<String> complete(@PathVariable int slotId) {
-        service.completeSlot(slotId);
-        return ResponseEntity.ok("Slot completed successfully");
+    @GetMapping("/get-all-travels")
+    public ResponseEntity<List<TravelResponseDTO>> getAllTravels() {
+        return ResponseEntity.ok(travelModuleService.getAllTravels());
     }
 }
+
