@@ -1,35 +1,35 @@
 import axios from "axios";
 
-const API_URL = "http://localhost:8080/api/auth"; // change if needed
+const axiosInstance = axios.create({
+  baseURL: "http://localhost:8080/api",
+  headers: {
+    "Content-Type": "application/json",
+  },
+});
 
-interface LoginRequest {
-  email: string;
-  password: string;
-}
+axiosInstance.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem("token");
 
-interface LoginResponse {
-  token: string;
-}
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
 
-export const loginUser = async (
-  credentials: LoginRequest
-): Promise<LoginResponse> => {
-  const response = await axios.post<LoginResponse>(
-    `${API_URL}/login`,
-    credentials
-  );
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
 
-  return response.data;
-};
+export default axiosInstance;
 
 import axiosInstance from "./axiosInstance";
 
-interface LoginRequest {
+export interface LoginRequest {
   email: string;
   password: string;
 }
 
-interface LoginResponse {
+export interface LoginResponse {
   token: string;
 }
 
@@ -44,19 +44,15 @@ export const loginUser = async (
   return response.data;
 };
 
+
 import React, { useState, ChangeEvent, FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { loginUser } from "../services/authService";
-
-interface LoginFormData {
-  email: string;
-  password: string;
-}
+import { loginUser, LoginRequest } from "../services/authService";
 
 const Login: React.FC = () => {
   const navigate = useNavigate();
 
-  const [formData, setFormData] = useState<LoginFormData>({
+  const [formData, setFormData] = useState<LoginRequest>({
     email: "",
     password: "",
   });
@@ -81,12 +77,9 @@ const Login: React.FC = () => {
     try {
       const response = await loginUser(formData);
 
-      // Store JWT
       localStorage.setItem("token", response.token);
 
-      // Redirect after successful login
       navigate("/dashboard");
-
     } catch (err: any) {
       if (err.response?.status === 401) {
         setError("Invalid email or password.");
@@ -155,6 +148,61 @@ const Login: React.FC = () => {
 
 export default Login;
 
+import React from "react";
+import { useNavigate } from "react-router-dom";
 
+const Dashboard: React.FC = () => {
+  const navigate = useNavigate();
 
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    navigate("/");
+  };
+
+  return (
+    <div className="container mt-5">
+      <div className="d-flex justify-content-between align-items-center">
+        <h3>Dashboard</h3>
+        <button className="btn btn-outline-danger" onClick={handleLogout}>
+          Logout
+        </button>
+      </div>
+
+      <hr />
+
+      <p>Welcome to the dashboard.</p>
+    </div>
+  );
+};
+
+export default Dashboard;
+
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import Login from "./components/Login";
+import Dashboard from "./pages/Dashboard";
+
+function App() {
+  return (
+    <Router>
+      <Routes>
+        <Route path="/" element={<Login />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+      </Routes>
+    </Router>
+  );
+}
+
+export default App;
+
+import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App";
+import "bootstrap/dist/css/bootstrap.min.css";
+import "./index.css";
+
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
 
