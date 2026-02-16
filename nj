@@ -1,3 +1,91 @@
+package com.example.backend.entity;
+
+import jakarta.persistence.*;
+import java.util.Date;
+
+@Entity
+@Table(name = "referrals")
+public class Referral {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "referral_id")
+    private Long referralId;
+
+    @ManyToOne
+    @JoinColumn(name = "job_id")
+    private Job job;
+
+    @ManyToOne
+    @JoinColumn(name = "referred_by_id")
+    private Employee referredBy;
+
+    @Column(name = "candidate_name")
+    private String candidateName;
+
+    @Column(name = "candidate_email")
+    private String candidateEmail;
+
+    @Column(name = "cv_url")
+    private String cvUrl;
+
+    @Column(name = "short_note")
+    private String shortNote;
+
+    @Column(name = "created_at")
+    private Date createdAt;
+
+    // getters and setters
+}
+
+package com.example.backend.entity;
+
+import jakarta.persistence.*;
+
+@Entity
+@Table(name = "referral_status")
+public class ReferralStatus {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "referral_status_id")
+    private Long referralStatusId;
+
+    @Column(name = "referral_status")
+    private String referralStatus;
+
+    // getters and setters
+}
+
+package com.example.backend.entity;
+
+import jakarta.persistence.*;
+import java.util.Date;
+
+@Entity
+@Table(name = "referred_job_status")
+public class ReferredJobStatus {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "referred_job_status_id")
+    private Long referredJobStatusId;
+
+    @ManyToOne
+    @JoinColumn(name = "referral_id")
+    private Referral referral;
+
+    @ManyToOne
+    @JoinColumn(name = "referral_status_id")
+    private ReferralStatus referralStatus;
+
+    @Column(name = "time_stamp")
+    private Date timeStamp;
+
+    // getters and setters
+}
+
+
 package com.example.backend.dto.response;
 
 import java.util.Date;
