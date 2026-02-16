@@ -1,108 +1,161 @@
-package com.example.backend.service;
+package com.example.backend.config.security;
 
-import com.example.backend.dto.response.OrgHierarchyDTO;
-import com.example.backend.repository.OrgChartRepository;
+import io.jsonwebtoken.*;
+import io.jsonwebtoken.security.Keys;
+import org.springframework.stereotype.Component;
+
+import java.security.Key;
+import java.util.Date;
+
+@Component
+public class JwtUtil {
+
+    private final String SECRET = "my-super-secret-key-my-super-secret-key";
+    private final Key key = Keys.hmacShaKeyFor(SECRET.getBytes());
+
+    public String generateToken(String email, String role) {
+        return Jwts.builder()
+                .setSubject(email)
+                .claim("role", role.toUpperCase()) // normalize
+                .setIssuedAt(new Date())
+                .setExpiration(new Date(System.currentTimeMillis() + 86400000))
+                .signWith(key, SignatureAlgorithm.HS256)
+                .compact();
+    }
+
+    public String extractEmail(String token) {
+        return extractClaims(token).getSubject();
+    }
+
+    public String extractRole(String token) {
+        return extractClaims(token).get("role", String.class);
+    }
+
+    private Claims extractClaims(String token) {
+        return Jwts.parserBuilder()
+                .setSigningKey(key)
+                .build()
+                .parseClaimsJws(token)
+                .getBody();
+    }
+}
+
+
+package com.example.backend.config.security;
+
+import jakarta.servlet.*;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Component;
 
+import java.io.IOException;
 import java.util.List;
 
-@Service
-public class OrgChartService {
+@Component
+public class JwtFilter implements Filter {
 
     @Autowired
-    private OrgChartRepository orgChartRepository;
+    private JwtUtil jwtUtil;
 
-    public List<OrgHierarchyDTO> getHierarchy(Integer empId) {
+    @Override
+    public void doFilter(ServletRequest request,
+                         ServletResponse response,
+                         FilterChain chain)
+            throws IOException, ServletException {
 
-        List<Object[]> results = orgChartRepository.getHierarchy(empId);
+        HttpServletRequest httpRequest = (HttpServletRequest) request;
+        String header = httpRequest.getHeader("Authorization");
 
-        return results.stream().map(row ->
-                new OrgHierarchyDTO(
-                        (String) row[0],  // employee_name
-                        (String) row[1],  // supervision_name
-                        (String) row[2],  // employee_position
-                        (String) row[3],  // supervisior_position
-                        (String) row[4],  // employee_pp
-                        (String) row[5]   // supervisior_pp
+        if (header != null && header.startsWith("Bearer ")) {
+
+            String token = header.substring(7);
+
+            try {
+                String email = jwtUtil.extractEmail(token);
+                String role = jwtUtil.extractRole(token);
+
+                List<GrantedAuthority> authorities =
+                        List.of(new SimpleGrantedAuthority("ROLE_" + role));
+
+                UsernamePasswordAuthenticationToken authentication =
+                        new UsernamePasswordAuthenticationToken(
+                                email,
+                                null,
+                                authorities
+                        );
+
+                SecurityContextHolder.getContext().setAuthentication(authentication);
+
+            } catch (Exception ignored) {
+            }
+        }
+
+        chain.doFilter(request, response);
+    }
+}
+
+package com.example.backend.config.security;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+
+@Configuration
+@EnableMethodSecurity
+public class SecurityConfig {
+
+    @Autowired
+    private JwtFilter jwtFilter;
+
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+
+        http
+                .csrf(csrf -> csrf.disable())
+                .cors(cors -> {})
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        .requestMatchers(
+                                "/auth/login",
+                                "/v3/api-docs/**",
+                                "/swagger-ui/**",
+                                "/swagger-ui.html"
+                        ).permitAll()
+                        .anyRequest().authenticated()
                 )
-        ).toList();
+                .httpBasic(httpBasic -> httpBasic.disable())
+                .formLogin(form -> form.disable());
+
+        http.addFilterBefore(jwtFilter,
+                UsernamePasswordAuthenticationFilter.class);
+
+        return http.build();
     }
 }
 
-package com.example.backend.dto.response;
 
-public class OrgHierarchyDTO {
 
-    private String employeeName;
-    private String supervisionName;
-    private String employeePosition;
-    private String supervisiorPosition;
-    private String employeeProfilePicture;
-    private String supervisiorProfilePicture;
+public String login(LoginRequestDTO request) {
 
-    public OrgHierarchyDTO(
-            String employeeName,
-            String supervisionName,
-            String employeePosition,
-            String supervisiorPosition,
-            String employeeProfilePicture,
-            String supervisiorProfilePicture
-    ) {
-        this.employeeName = employeeName;
-        this.supervisionName = supervisionName;
-        this.employeePosition = employeePosition;
-        this.supervisiorPosition = supervisiorPosition;
-        this.employeeProfilePicture = employeeProfilePicture;
-        this.supervisiorProfilePicture = supervisiorProfilePicture;
+    Employee employee = employeeRepository.findByEmail(request.getEmail())
+            .orElseThrow(() -> new RuntimeException("Invalid credentials"));
+
+    if (!employee.getPassword().equals(request.getPassword())) {
+        throw new RuntimeException("Invalid credentials");
     }
 
-    // getters
-}
+    String roleName = employee.getRole().getRoleName();
 
-package com.example.backend.repository;
-
-import com.example.backend.dto.response.OrgHierarchyDTO;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.Repository;
-import org.springframework.data.repository.query.Param;
-
-import java.util.List;
-
-@org.springframework.stereotype.Repository
-public interface OrgChartRepository extends Repository<Object, Long> {
-
-    @Query(
-            value = "EXEC pr_orgmod_get_hierarchy @emp_id = :empId",
-            nativeQuery = true
-    )
-    List<Object[]> getHierarchy(@Param("empId") Integer empId);
-}
-
-
-package com.example.backend.controller;
-
-import com.example.backend.dto.response.OrgHierarchyDTO;
-import com.example.backend.service.OrgChartService;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
-
-@RestController
-@RequestMapping("/api/org-chart")
-@CrossOrigin(origins = "*")
-public class OrgChartController {
-
-    @Autowired
-    private OrgChartService orgChartService;
-
-    @GetMapping("/{employeeId}")
-    public List<OrgHierarchyDTO> getHierarchy(
-            @PathVariable Integer employeeId
-    ) {
-        return orgChartService.getHierarchy(employeeId);
-    }
+    return jwtUtil.generateToken(employee.getEmail(), roleName);
 }
 
 
