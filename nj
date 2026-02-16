@@ -1,10 +1,68 @@
+package com.example.backend.dto.response;
+
+import java.util.Date;
+
+public class ReferralResponseDTO {
+
+    private Long referralId;
+    private String candidateName;
+    private String candidateEmail;
+    private String cvUrl;
+    private String shortNote;
+
+    private String jobTitle;
+    private String referredByName;
+    private String currentStatus;
+
+    private Date createdAt;
+
+    public ReferralResponseDTO(Long referralId,
+                               String candidateName,
+                               String candidateEmail,
+                               String cvUrl,
+                               String shortNote,
+                               String jobTitle,
+                               String referredByName,
+                               String currentStatus,
+                               Date createdAt) {
+
+        this.referralId = referralId;
+        this.candidateName = candidateName;
+        this.candidateEmail = candidateEmail;
+        this.cvUrl = cvUrl;
+        this.shortNote = shortNote;
+        this.jobTitle = jobTitle;
+        this.referredByName = referredByName;
+        this.currentStatus = currentStatus;
+        this.createdAt = createdAt;
+    }
+
+    // getters
+}
+
+
+
+@Repository
+public interface ReferralRepository extends JpaRepository<Referral, Long> {
+}
+
+
+@Repository
+public interface ReferralStatusRepository extends JpaRepository<ReferralStatus, Long> {
+}
+
+
+@Repository
+public interface ReferredJobStatusRepository extends JpaRepository<ReferredJobStatus, Long> {
+
+    ReferredJobStatus findTopByReferralReferralIdOrderByTimeStampDesc(Long referralId);
+}
+
 package com.example.backend.service;
 
-import com.example.backend.dto.response.JobResponseDTO;
-import com.example.backend.entity.Employee;
-import com.example.backend.entity.Job;
-import com.example.backend.repository.EmployeeRepository;
-import com.example.backend.repository.JobModuleRepository;
+import com.example.backend.dto.response.ReferralResponseDTO;
+import com.example.backend.entity.*;
+import com.example.backend.repository.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -12,158 +70,189 @@ import java.util.Date;
 import java.util.List;
 
 @Service
-public class JobService {
+public class ReferralService {
+
+    @Autowired
+    private ReferralRepository referralRepository;
+
+    @Autowired
+    private EmployeeRepository employeeRepository;
 
     @Autowired
     private JobModuleRepository jobRepository;
 
     @Autowired
-    private EmployeeRepository employeeRepository;
+    private ReferralStatusRepository referralStatusRepository;
+
+    @Autowired
+    private ReferredJobStatusRepository referredJobStatusRepository;
+
+    // ---------------- CREATE REFERRAL ----------------
+    public ReferralResponseDTO createReferral(
+            Long jobId,
+            Long referredById,
+            String candidateName,
+            String candidateEmail,
+            String cvUrl,
+            String shortNote
+    ) {
+
+        Job job = jobRepository.findById(jobId)
+                .orElseThrow(() -> new RuntimeException("Job not found"));
+
+        Employee employee = employeeRepository.findById(referredById)
+                .orElseThrow(() -> new RuntimeException("Employee not found"));
+
+        Referral referral = new Referral();
+        referral.setJob(job);
+        referral.setReferredBy(employee);
+        referral.setCandidateName(candidateName);
+        referral.setCandidateEmail(candidateEmail);
+        referral.setCvUrl(cvUrl);
+        referral.setShortNote(shortNote);
+        referral.setCreatedAt(new Date());
+
+        Referral savedReferral = referralRepository.save(referral);
+
+        // default status = NEW
+        ReferralStatus status = referralStatusRepository.findById(1L)
+                .orElseThrow(() -> new RuntimeException("Default status not found"));
+
+        ReferredJobStatus statusHistory = new ReferredJobStatus();
+        statusHistory.setReferral(savedReferral);
+        statusHistory.setReferralStatus(status);
+        statusHistory.setTimeStamp(new Date());
+
+        referredJobStatusRepository.save(statusHistory);
+
+        return mapToDTO(savedReferral, status.getReferralStatus());
+    }
 
     // ---------------- GET ALL ----------------
-    public List<JobResponseDTO> getAllJobs() {
-        return jobRepository.findAll()
+    public List<ReferralResponseDTO> getAllReferrals() {
+
+        return referralRepository.findAll()
                 .stream()
-                .map(this::mapToDTO)
+                .map(this::mapLatestStatus)
                 .toList();
     }
 
     // ---------------- GET BY ID ----------------
-    public JobResponseDTO getJobById(Long jobId) {
-        Job job = jobRepository.findById(jobId)
-                .orElseThrow(() -> new RuntimeException("Job not found"));
+    public ReferralResponseDTO getReferralById(Long id) {
 
-        return mapToDTO(job);
+        Referral referral = referralRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Referral not found"));
+
+        return mapLatestStatus(referral);
     }
 
-    // ---------------- CREATE ----------------
-    public JobResponseDTO createJob(Job job, Long postedById) {
+    // ---------------- UPDATE STATUS ----------------
+    public ReferralResponseDTO updateReferralStatus(Long referralId, Long statusId) {
 
-        Employee employee = employeeRepository.findById(postedById)
-                .orElseThrow(() -> new RuntimeException("Employee not found"));
+        Referral referral = referralRepository.findById(referralId)
+                .orElseThrow(() -> new RuntimeException("Referral not found"));
 
-        job.setPosted_by_employee(employee);
-        job.setPosted_date(new Date());
+        ReferralStatus status = referralStatusRepository.findById(statusId)
+                .orElseThrow(() -> new RuntimeException("Status not found"));
 
-        Job savedJob = jobRepository.save(job);
+        ReferredJobStatus history = new ReferredJobStatus();
+        history.setReferral(referral);
+        history.setReferralStatus(status);
+        history.setTimeStamp(new Date());
 
-        return mapToDTO(savedJob);
+        referredJobStatusRepository.save(history);
+
+        return mapToDTO(referral, status.getReferralStatus());
     }
 
-    // ---------------- UPDATE ----------------
-    public JobResponseDTO updateJob(Long jobId, Job updatedJob) {
+    // ---------------- DTO HELPERS ----------------
 
-        Job existingJob = jobRepository.findById(jobId)
-                .orElseThrow(() -> new RuntimeException("Job not found"));
+    private ReferralResponseDTO mapLatestStatus(Referral referral) {
 
-        existingJob.setJob_title(updatedJob.getJob_title());
-        existingJob.setJob_summary(updatedJob.getJob_summary());
-        existingJob.setJob_description_url(updatedJob.getJob_description_url());
-        existingJob.setJob_status(updatedJob.getJob_status());
+        ReferredJobStatus latest =
+                referredJobStatusRepository
+                        .findTopByReferralReferralIdOrderByTimeStampDesc(
+                                referral.getReferralId()
+                        );
 
-        Job saved = jobRepository.save(existingJob);
+        String status = latest != null
+                ? latest.getReferralStatus().getReferralStatus()
+                : "UNKNOWN";
 
-        return mapToDTO(saved);
+        return mapToDTO(referral, status);
     }
 
-    // ---------------- DELETE ----------------
-    public void deleteJob(Long jobId) {
+    private ReferralResponseDTO mapToDTO(Referral referral, String status) {
 
-        Job job = jobRepository.findById(jobId)
-                .orElseThrow(() -> new RuntimeException("Job not found"));
-
-        jobRepository.delete(job);
-    }
-
-    // ---------------- CHANGE STATUS ----------------
-    public JobResponseDTO updateJobStatus(Long jobId, String status) {
-
-        Job job = jobRepository.findById(jobId)
-                .orElseThrow(() -> new RuntimeException("Job not found"));
-
-        job.setJob_status(status);
-
-        return mapToDTO(jobRepository.save(job));
-    }
-
-    // ---------------- DTO MAPPER ----------------
-    private JobResponseDTO mapToDTO(Job job) {
-
-        return new JobResponseDTO(
-                job.getJob_id(),
-                job.getJob_title(),
-                job.getJob_summary(),
-                job.getJob_description_url(),
-                job.getJob_status(),
-                job.getPosted_by_employee().getFullName(),
-                job.getPosted_date()
+        return new ReferralResponseDTO(
+                referral.getReferralId(),
+                referral.getCandidateName(),
+                referral.getCandidateEmail(),
+                referral.getCvUrl(),
+                referral.getShortNote(),
+                referral.getJob().getJob_title(),
+                referral.getReferredBy().getFullName(),
+                status,
+                referral.getCreatedAt()
         );
     }
 }
 
-
 package com.example.backend.controller;
 
-import com.example.backend.dto.response.JobResponseDTO;
-import com.example.backend.entity.Job;
-import com.example.backend.service.JobService;
+import com.example.backend.dto.response.ReferralResponseDTO;
+import com.example.backend.service.ReferralService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/jobs")
+@RequestMapping("/api/referrals")
 @CrossOrigin(origins = "*")
-public class JobController {
+public class ReferralController {
 
     @Autowired
-    private JobService jobService;
+    private ReferralService referralService;
 
-    // ---------------- GET ALL ----------------
-    @GetMapping
-    public List<JobResponseDTO> getAllJobs() {
-        return jobService.getAllJobs();
-    }
-
-    // ---------------- GET BY ID ----------------
-    @GetMapping("/{jobId}")
-    public JobResponseDTO getJobById(@PathVariable Long jobId) {
-        return jobService.getJobById(jobId);
-    }
-
-    // ---------------- CREATE ----------------
+    // CREATE
     @PostMapping
-    public JobResponseDTO createJob(
-            @RequestBody Job job,
-            @RequestParam Long postedById
+    public ReferralResponseDTO createReferral(
+            @RequestParam Long jobId,
+            @RequestParam Long referredById,
+            @RequestParam String candidateName,
+            @RequestParam String candidateEmail,
+            @RequestParam String cvUrl,
+            @RequestParam(required = false) String shortNote
     ) {
-        return jobService.createJob(job, postedById);
+        return referralService.createReferral(
+                jobId,
+                referredById,
+                candidateName,
+                candidateEmail,
+                cvUrl,
+                shortNote
+        );
     }
 
-    // ---------------- UPDATE ----------------
-    @PutMapping("/{jobId}")
-    public JobResponseDTO updateJob(
-            @PathVariable Long jobId,
-            @RequestBody Job job
-    ) {
-        return jobService.updateJob(jobId, job);
+    // GET ALL
+    @GetMapping
+    public List<ReferralResponseDTO> getAll() {
+        return referralService.getAllReferrals();
     }
 
-    // ---------------- UPDATE STATUS ----------------
-    @PatchMapping("/{jobId}/status")
-    public JobResponseDTO updateStatus(
-            @PathVariable Long jobId,
-            @RequestParam String status
-    ) {
-        return jobService.updateJobStatus(jobId, status);
+    // GET BY ID
+    @GetMapping("/{id}")
+    public ReferralResponseDTO getById(@PathVariable Long id) {
+        return referralService.getReferralById(id);
     }
 
-    // ---------------- DELETE ----------------
-    @DeleteMapping("/{jobId}")
-    public void deleteJob(@PathVariable Long jobId) {
-        jobService.deleteJob(jobId);
+    // UPDATE STATUS
+    @PatchMapping("/{id}/status")
+    public ReferralResponseDTO updateStatus(
+            @PathVariable Long id,
+            @RequestParam Long statusId
+    ) {
+        return referralService.updateReferralStatus(id, statusId);
     }
 }
-
-
