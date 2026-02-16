@@ -1,31 +1,72 @@
-package com.example.backend.config;
+package com.example.backend.dto.response;
 
-import io.swagger.v3.oas.models.OpenAPI;
-import io.swagger.v3.oas.models.Components;
-import io.swagger.v3.oas.models.security.SecurityRequirement;
-import io.swagger.v3.oas.models.security.SecurityScheme;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
+public class LoginResponseDTO {
 
-@Configuration
-public class SwaggerConfig {
+    private String token;
+    private int employeeId;
+    private String fullName;
+    private String email;
+    private String role;
 
-    @Bean
-    public OpenAPI customOpenAPI() {
+    public LoginResponseDTO(String token,
+                            int employeeId,
+                            String fullName,
+                            String email,
+                            String role) {
+        this.token = token;
+        this.employeeId = employeeId;
+        this.fullName = fullName;
+        this.email = email;
+        this.role = role;
+    }
 
-        final String securitySchemeName = "bearerAuth";
+    public String getToken() {
+        return token;
+    }
 
-        return new OpenAPI()
-                .addSecurityItem(new SecurityRequirement().addList(securitySchemeName))
-                .components(
-                        new Components()
-                                .addSecuritySchemes(securitySchemeName,
-                                        new SecurityScheme()
-                                                .name(securitySchemeName)
-                                                .type(SecurityScheme.Type.HTTP)
-                                                .scheme("bearer")
-                                                .bearerFormat("JWT")
-                                )
-                );
+    public int getEmployeeId() {
+        return employeeId;
+    }
+
+    public String getFullName() {
+        return fullName;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public String getRole() {
+        return role;
     }
 }
+
+public LoginResponseDTO login(LoginRequestDTO request) {
+
+    Employee employee = employeeRepository.findByEmail(request.getEmail())
+            .orElseThrow(() -> new RuntimeException("Invalid credentials"));
+
+    if (!employee.getPassword().equals(request.getPassword())) {
+        throw new RuntimeException("Invalid credentials");
+    }
+
+    String roleName = employee.getRole().getRoleName();
+
+    String token = jwtUtil.generateToken(employee.getEmail(), roleName);
+
+    return new LoginResponseDTO(
+            token,
+            employee.getEmployeeId(),
+            employee.getFullName(),
+            employee.getEmail(),
+            roleName
+    );
+}
+
+
+@PostMapping("/login")
+public ResponseEntity<LoginResponseDTO> login(@RequestBody LoginRequestDTO request) {
+    return ResponseEntity.ok(authService.login(request));
+}
+
+
