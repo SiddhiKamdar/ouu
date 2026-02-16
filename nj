@@ -1,85 +1,15 @@
-package com.example.backend.dto.response;
+@Bean
+public org.springframework.web.cors.CorsConfigurationSource corsConfigurationSource() {
 
-public class LoginResponseDTO {
+    var configuration = new org.springframework.web.cors.CorsConfiguration();
 
-    private String token;
-    private int employeeId;
-    private String fullName;
-    private String email;
-    private String role;
+    configuration.setAllowedOrigins(List.of("http://localhost:5173"));
+    configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
+    configuration.setAllowedHeaders(List.of("*"));
+    configuration.setAllowCredentials(true);
 
-    public LoginResponseDTO(String token,
-                            int employeeId,
-                            String fullName,
-                            String email,
-                            String role) {
-        this.token = token;
-        this.employeeId = employeeId;
-        this.fullName = fullName;
-        this.email = email;
-        this.role = role;
-    }
+    var source = new org.springframework.web.cors.UrlBasedCorsConfigurationSource();
+    source.registerCorsConfiguration("/**", configuration);
 
-    public String getToken() {
-        return token;
-    }
-
-    public int getEmployeeId() {
-        return employeeId;
-    }
-
-    public String getFullName() {
-        return fullName;
-    }
-
-    public String getEmail() {
-        return email;
-    }
-
-    public String getRole() {
-        return role;
-    }
+    return source;
 }
-
-public LoginResponseDTO login(LoginRequestDTO request) {
-
-    Employee employee = employeeRepository.findByEmail(request.getEmail())
-            .orElseThrow(() -> new RuntimeException("Invalid credentials"));
-
-    if (!employee.getPassword().equals(request.getPassword())) {
-        throw new RuntimeException("Invalid credentials");
-    }
-
-    String roleName = employee.getRole().getRoleName();
-
-    String token = jwtUtil.generateToken(employee.getEmail(), roleName);
-
-    return new LoginResponseDTO(
-            token,
-            employee.getEmployeeId(),
-            employee.getFullName(),
-            employee.getEmail(),
-            roleName
-    );
-}
-
-
-@PostMapping("/login")
-public ResponseEntity<LoginResponseDTO> login(@RequestBody LoginRequestDTO request) {
-    return ResponseEntity.ok(authService.login(request));
-}
-
-export interface LoginResponse {
-  token: string;
-  employeeId: number;
-  fullName: string;
-  email: string;
-  role: string;
-}
-
-localStorage.setItem("token", response.token);
-localStorage.setItem("employeeId", response.employeeId.toString());
-localStorage.setItem("fullName", response.fullName);
-localStorage.setItem("email", response.email);
-localStorage.setItem("role", response.role);
-
