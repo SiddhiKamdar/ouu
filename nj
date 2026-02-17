@@ -1,60 +1,83 @@
-return (
-  <div
-    style={{
-      minHeight: "100vh",
-      backgroundColor: "#f4f6f9",
-      padding: "30px"
-    }}
-  >
-    <div style={{ maxWidth: "1400px", margin: "0 auto" }}>
+DECLARE @game_id INT
 
-      <h2 style={{ marginBottom: "25px" }}>Game Scheduling</h2>
+DECLARE game_cursor CURSOR FOR
+SELECT game_id FROM games
 
-      <div style={{ marginBottom: "20px", maxWidth: "300px" }}>
-        <label className="form-label">Select Game</label>
-        <select
-          className="form-select"
-          onChange={(e) => handleGameSelect(Number(e.target.value))}
-        >
-          <option value="">Select Game</option>
-          {games.map(game => (
-            <option key={game.gameId} value={game.gameId}>
-              {game.gameName}
-            </option>
-          ))}
-        </select>
-      </div>
+OPEN game_cursor
+FETCH NEXT FROM game_cursor INTO @game_id
 
-      {selectedGame && (
-        <div
-          style={{
-            backgroundColor: "#ffffff",
-            padding: "25px",
-            borderRadius: "12px",
-            boxShadow: "0 4px 16px rgba(0,0,0,0.06)",
-            width: "100%"
-          }}
-        >
-          <FullCalendar
-            plugins={[timeGridPlugin, interactionPlugin]}
-            initialView="timeGridWeek"
-            headerToolbar={{
-              left: "prev,next today",
-              center: "title",
-              right: ""
-            }}
-            allDaySlot={false}
-            slotMinTime="06:00:00"
-            slotMaxTime="23:00:00"
-            nowIndicator={true}
-            expandRows={true}
-            events={calendarEvents}
-            eventClick={handleEventClick}
-            height="80vh"
-          />
-        </div>
-      )}
+WHILE @@FETCH_STATUS = 0
+BEGIN
 
-    </div>
-  </div>
-);
+    DECLARE @day INT = 1
+
+    WHILE @day <= 7
+    BEGIN
+
+        INSERT INTO game_slot_templates
+        (game_id, day_of_week, start_time, end_time, is_weekend, is_night, is_active)
+        VALUES
+        (@game_id, @day, '18:00', '19:00', 
+            CASE WHEN @day IN (6,7) THEN 1 ELSE 0 END,
+            1,
+            1),
+        (@game_id, @day, '19:00', '20:00',
+            CASE WHEN @day IN (6,7) THEN 1 ELSE 0 END,
+            1,
+            1),
+        (@game_id, @day, '20:00', '21:00',
+            CASE WHEN @day IN (6,7) THEN 1 ELSE 0 END,
+            1,
+            1)
+
+        SET @day = @day + 1
+    END
+
+    FETCH NEXT FROM game_cursor INTO @game_id
+END
+
+CLOSE game_cursor
+DEALLOCATE game_cursor
+
+
+DECLARE @start_date DATE = CAST(GETDATE() AS DATE)
+DECLARE @end_date DATE = DATEADD(DAY, 28, @start_date)
+
+WHILE @start_date <= @end_date
+BEGIN
+
+    INSERT INTO game_slots (template_id, slot_date, status)
+    SELECT 
+        template_id,
+        @start_date,
+        'OPEN'
+    FROM game_slot_templates
+    WHERE day_of_week = DATEPART(WEEKDAY, @start_date)
+      AND is_active = 1
+
+    SET @start_date = DATEADD(DAY, 1, @start_date)
+END
+
+UPDATE TOP (20) game_slots
+SET status = 'BOOKED'
+WHERE status = 'OPEN'
+
+UPDATE TOP (10) game_slots
+SET status = 'COMPLETED'
+WHERE status = 'OPEN'
+
+UPDATE TOP (5) game_slots
+SET status = 'CANCELLED'
+WHERE status = 'OPEN'
+
+UPDATE TOP (20) game_slots
+SET status = 'BOOKED'
+WHERE status = 'OPEN'
+
+UPDATE TOP (10) game_slots
+SET status = 'COMPLETED'
+WHERE status = 'OPEN'
+
+UPDATE TOP (5) game_slots
+SET status = 'CANCELLED'
+WHERE status = 'OPEN'
