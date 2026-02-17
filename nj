@@ -1,16 +1,29 @@
-events={slots.map(slot => ({
-  id: slot.slotId,
-  title: slot.status === "OPEN"
-    ? "Open"
-    : slot.leaderEmpId === currentUserId
-      ? "Your Booking"
-      : `Booked (${slot.teamSize})`,
-  start: slot.slotDate + "T" + slot.startTime,
-  end: slot.slotDate + "T" + slot.endTime,
-  backgroundColor:
-    slot.status === "OPEN"
-      ? "#28a745"
-      : slot.leaderEmpId === currentUserId
-        ? "#0d6efd"
-        : "#dc3545"
-}))}
+
+<FullCalendar
+  plugins={[timeGridPlugin, interactionPlugin]}
+  initialView="timeGridWeek"
+  height="auto"
+  events={slots.map(slot => ({
+    id: slot.slotId.toString(),
+
+    title:
+      slot.status === "OPEN"
+        ? "Open"
+        : slot.leaderEmpId === currentUserId
+          ? "Your Booking"
+          : `Booked (${slot.teamSize})`,
+
+    start: `${slot.slotDate}T${slot.startTime}`,
+    end: `${slot.slotDate}T${slot.endTime}`,
+
+    backgroundColor:
+      slot.status === "OPEN"
+        ? "#28a745"     // Green
+        : slot.status === "COMPLETED"
+          ? "#6c757d"   // Gray
+          : slot.leaderEmpId === currentUserId
+            ? "#0d6efd" // Blue (mine)
+            : "#dc3545" // Red (others)
+
+  }))}
+/>
