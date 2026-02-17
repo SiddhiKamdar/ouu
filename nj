@@ -1,29 +1,47 @@
+@Component
+public class JwtFilter extends OncePerRequestFilter {
 
-<FullCalendar
-  plugins={[timeGridPlugin, interactionPlugin]}
-  initialView="timeGridWeek"
-  height="auto"
-  events={slots.map(slot => ({
-    id: slot.slotId.toString(),
+    @Autowired
+    private JwtUtil jwtUtil;
 
-    title:
-      slot.status === "OPEN"
-        ? "Open"
-        : slot.leaderEmpId === currentUserId
-          ? "Your Booking"
-          : `Booked (${slot.teamSize})`,
+    @Override
+    protected void doFilterInternal(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            FilterChain chain)
+            throws ServletException, IOException {
 
-    start: `${slot.slotDate}T${slot.startTime}`,
-    end: `${slot.slotDate}T${slot.endTime}`,
+        String header = request.getHeader("Authorization");
 
-    backgroundColor:
-      slot.status === "OPEN"
-        ? "#28a745"     // Green
-        : slot.status === "COMPLETED"
-          ? "#6c757d"   // Gray
-          : slot.leaderEmpId === currentUserId
-            ? "#0d6efd" // Blue (mine)
-            : "#dc3545" // Red (others)
+        if (header != null && header.startsWith("Bearer ")) {
 
-  }))}
-/>
+            String token = header.substring(7);
+
+            try {
+                String email = jwtUtil.extractEmail(token);
+                String role = jwtUtil.extractRole(token);
+
+                List<GrantedAuthority> authorities =
+                        List.of(new SimpleGrantedAuthority("ROLE_" + role));
+
+                UsernamePasswordAuthenticationToken authentication =
+                        new UsernamePasswordAuthenticationToken(
+                                email,
+                                null,
+                                authorities
+                        );
+
+                SecurityContextHolder.getContext()
+                        .setAuthentication(authentication);
+
+                System.out.println("Authenticated: " + email);
+                System.out.println("Authorities: " + authorities);
+
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+
+        chain.doFilter(request, response);
+    }
+}
