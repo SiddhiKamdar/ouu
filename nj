@@ -1,190 +1,108 @@
-package com.example.backend.dto.response;
+import React from "react";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
 
-public class EmployeeSimpleDTO {
-
-    private int employeeId;
-    private String fullName;
-
-    public EmployeeSimpleDTO(int employeeId, String fullName) {
-        this.employeeId = employeeId;
-        this.fullName = fullName;
-    }
-
-    public int getEmployeeId() {
-        return employeeId;
-    }
-
-    public String getFullName() {
-        return fullName;
-    }
-}
-
-package com.example.backend.repository;
-
-import com.example.backend.entity.Employee;
-import org.springframework.data.jpa.repository.JpaRepository;
-
-public interface EmployeeRepository extends JpaRepository<Employee, Integer> {
-}
-
-
-package com.example.backend.service;
-
-import com.example.backend.dto.response.EmployeeSimpleDTO;
-import com.example.backend.repository.EmployeeRepository;
-import org.springframework.stereotype.Service;
-
-import java.util.List;
-
-@Service
-public class EmployeeService {
-
-    private final EmployeeRepository repository;
-
-    public EmployeeService(EmployeeRepository repository) {
-        this.repository = repository;
-    }
-
-    public List<EmployeeSimpleDTO> getAllEmployees() {
-        return repository.findAll()
-                .stream()
-                .map(emp -> new EmployeeSimpleDTO(
-                        emp.getEmployeeId(),
-                        emp.getFullName()
-                ))
-                .toList();
-    }
-}
-
-package com.example.backend.controller;
-
-import com.example.backend.dto.response.EmployeeSimpleDTO;
-import com.example.backend.service.EmployeeService;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
-
-@RestController
-@RequestMapping("/employees")
-public class EmployeeController {
-
-    private final EmployeeService service;
-
-    public EmployeeController(EmployeeService service) {
-        this.service = service;
-    }
-
-    @GetMapping
-    public List<EmployeeSimpleDTO> getEmployees() {
-        return service.getAllEmployees();
-    }
-}
-
-
-export interface Employee {
-  employeeId: number;
-  fullName: string;
-}
-
-export const getEmployees = async (): Promise<Employee[]> => {
-  const response = await axiosInstance.get("/employees");
-  return response.data;
-};
-
-
-import React, { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import {
-  getEmployees,
-  applyForSlot,
-  type Employee
-} from "../services/gameService";
-
-const BookingForm: React.FC = () => {
-
-  const { slotId } = useParams();
+const AppLayout: React.FC = () => {
   const navigate = useNavigate();
 
-  const employeeId = Number(localStorage.getItem("employeeId"));
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
 
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [selectedMembers, setSelectedMembers] = useState<number[]>([]);
-
-  useEffect(() => {
-    loadEmployees();
-  }, []);
-
-  const loadEmployees = async () => {
-    const data = await getEmployees();
-    setEmployees(data);
+  const handleLogout = () => {
+    localStorage.clear();
+    navigate("/");
   };
 
-  const handleMemberToggle = (id: number) => {
-    setSelectedMembers(prev =>
-      prev.includes(id)
-        ? prev.filter(m => m !== id)
-        : [...prev, id]
-    );
-  };
-
-  const handleSubmit = async () => {
-
-    const members = [...new Set([employeeId, ...selectedMembers])];
-
-    try {
-      await applyForSlot({
-        slotId: Number(slotId),
-        leaderEmpId: employeeId,
-        members
-      });
-
-      alert("Applied successfully");
-      navigate("/games");
-
-    } catch (err: any) {
-      alert(err.response?.data?.message || "Failed to apply");
-    }
-  };
+  const modules = [
+    { label: "Travel", route: "travel" },
+    { label: "Achievements", route: "achievements" },
+    { label: "Games", route: "games" },
+    { label: "Jobs", route: "jobs" }
+  ];
 
   return (
-    <div style={{ padding: "40px" }}>
-      <h2>Book Slot</h2>
+    <div style={{ minHeight: "100vh", backgroundColor: "#f4f6f9" }}>
 
-      <p>Leader: You</p>
+      {/* Top Navbar */}
+      <nav className="navbar navbar-expand bg-white shadow-sm px-4">
+        <span className="navbar-brand fw-bold">HRMS</span>
 
-      <h5>Select Team Members</h5>
-
-      <div style={{ maxHeight: "300px", overflowY: "auto" }}>
-        {employees.map(emp => (
-          <div key={emp.employeeId}>
-            <input
-              type="checkbox"
-              checked={selectedMembers.includes(emp.employeeId)}
-              onChange={() => handleMemberToggle(emp.employeeId)}
-            />
-            {" "}
-            {emp.fullName}
+        <div className="ms-auto d-flex align-items-center gap-3">
+          <div
+            className="rounded-circle bg-success text-white d-flex justify-content-center align-items-center"
+            style={{ width: "36px", height: "36px" }}
+          >
+            {user?.fullName?.charAt(0) || "U"}
           </div>
-        ))}
+
+          <span className="fw-semibold">
+            {user?.fullName || "User"}
+          </span>
+
+          <button
+            className="btn btn-outline-danger btn-sm"
+            onClick={handleLogout}
+          >
+            Logout
+          </button>
+        </div>
+      </nav>
+
+      {/* Module Navigation */}
+      <div className="bg-white border-bottom">
+        <div className="container d-flex gap-4 py-3">
+          {modules.map((module) => (
+            <NavLink
+              key={module.route}
+              to={module.route}
+              className={({ isActive }) =>
+                `text-decoration-none fw-semibold pb-2 ${
+                  isActive
+                    ? "text-success border-bottom border-2 border-success"
+                    : "text-dark"
+                }`
+              }
+            >
+              {module.label}
+            </NavLink>
+          ))}
+        </div>
       </div>
 
-      <button
-        className="btn btn-primary mt-3"
-        onClick={handleSubmit}
-      >
-        Submit
-      </button>
+      {/* Page Content */}
+      <div className="container py-4">
+        <Outlet />
+      </div>
+
     </div>
   );
 };
 
-export default BookingForm;
+export default AppLayout;
 
-import BookingForm from "./pages/BookingForm";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import Login from "./pages/Login";
+import AppLayout from "./layout/AppLayout";
+import GameSchedule from "./pages/GameSchedule";
 
-<Route path="/games/slot/:slotId/book" element={<BookingForm />} />
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
 
-const handleEventClick = (info: any) => {
-  const slotId = Number(info.event.id);
-  navigate(`/games/slot/${slotId}/book`);
-};
+        <Route path="/" element={<Login />} />
+
+        <Route path="/app" element={<AppLayout />}>
+
+          <Route path="travel" element={<div>Travel Page</div>} />
+          <Route path="achievements" element={<div>Achievements Page</div>} />
+          <Route path="games" element={<GameSchedule />} />
+          <Route path="jobs" element={<div>Jobs Page</div>} />
+
+        </Route>
+
+      </Routes>
+    </BrowserRouter>
+  );
+}
+
+export default App;
+
