@@ -1,78 +1,190 @@
-return (
-  <div
-    style={{
-      minHeight: "100vh",
-      width: "100%",
-      backgroundColor: "#f5f7fa",
-      padding: "40px 60px",
-      boxSizing: "border-box"
-    }}
-  >
-    <div
-      style={{
-        width: "100%",
-        maxWidth: "1600px",
-        margin: "0 auto"
-      }}
-    >
-      <h2
-        style={{
-          marginBottom: "30px",
-          fontWeight: 600
-        }}
-      >
-        Game Scheduling
-      </h2>
+package com.example.backend.dto.response;
 
-      <div
-        style={{
-          marginBottom: "30px",
-          width: "300px"
-        }}
-      >
-        <label className="form-label">Select Game</label>
-        <select
-          className="form-select"
-          onChange={(e) => handleGameSelect(Number(e.target.value))}
-        >
-          <option value="">Select Game</option>
-          {games.map(game => (
-            <option key={game.gameId} value={game.gameId}>
-              {game.gameName}
-            </option>
-          ))}
-        </select>
+public class EmployeeSimpleDTO {
+
+    private int employeeId;
+    private String fullName;
+
+    public EmployeeSimpleDTO(int employeeId, String fullName) {
+        this.employeeId = employeeId;
+        this.fullName = fullName;
+    }
+
+    public int getEmployeeId() {
+        return employeeId;
+    }
+
+    public String getFullName() {
+        return fullName;
+    }
+}
+
+package com.example.backend.repository;
+
+import com.example.backend.entity.Employee;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface EmployeeRepository extends JpaRepository<Employee, Integer> {
+}
+
+
+package com.example.backend.service;
+
+import com.example.backend.dto.response.EmployeeSimpleDTO;
+import com.example.backend.repository.EmployeeRepository;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+
+@Service
+public class EmployeeService {
+
+    private final EmployeeRepository repository;
+
+    public EmployeeService(EmployeeRepository repository) {
+        this.repository = repository;
+    }
+
+    public List<EmployeeSimpleDTO> getAllEmployees() {
+        return repository.findAll()
+                .stream()
+                .map(emp -> new EmployeeSimpleDTO(
+                        emp.getEmployeeId(),
+                        emp.getFullName()
+                ))
+                .toList();
+    }
+}
+
+package com.example.backend.controller;
+
+import com.example.backend.dto.response.EmployeeSimpleDTO;
+import com.example.backend.service.EmployeeService;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/employees")
+public class EmployeeController {
+
+    private final EmployeeService service;
+
+    public EmployeeController(EmployeeService service) {
+        this.service = service;
+    }
+
+    @GetMapping
+    public List<EmployeeSimpleDTO> getEmployees() {
+        return service.getAllEmployees();
+    }
+}
+
+
+export interface Employee {
+  employeeId: number;
+  fullName: string;
+}
+
+export const getEmployees = async (): Promise<Employee[]> => {
+  const response = await axiosInstance.get("/employees");
+  return response.data;
+};
+
+
+import React, { useEffect, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import {
+  getEmployees,
+  applyForSlot,
+  type Employee
+} from "../services/gameService";
+
+const BookingForm: React.FC = () => {
+
+  const { slotId } = useParams();
+  const navigate = useNavigate();
+
+  const employeeId = Number(localStorage.getItem("employeeId"));
+
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [selectedMembers, setSelectedMembers] = useState<number[]>([]);
+
+  useEffect(() => {
+    loadEmployees();
+  }, []);
+
+  const loadEmployees = async () => {
+    const data = await getEmployees();
+    setEmployees(data);
+  };
+
+  const handleMemberToggle = (id: number) => {
+    setSelectedMembers(prev =>
+      prev.includes(id)
+        ? prev.filter(m => m !== id)
+        : [...prev, id]
+    );
+  };
+
+  const handleSubmit = async () => {
+
+    const members = [...new Set([employeeId, ...selectedMembers])];
+
+    try {
+      await applyForSlot({
+        slotId: Number(slotId),
+        leaderEmpId: employeeId,
+        members
+      });
+
+      alert("Applied successfully");
+      navigate("/games");
+
+    } catch (err: any) {
+      alert(err.response?.data?.message || "Failed to apply");
+    }
+  };
+
+  return (
+    <div style={{ padding: "40px" }}>
+      <h2>Book Slot</h2>
+
+      <p>Leader: You</p>
+
+      <h5>Select Team Members</h5>
+
+      <div style={{ maxHeight: "300px", overflowY: "auto" }}>
+        {employees.map(emp => (
+          <div key={emp.employeeId}>
+            <input
+              type="checkbox"
+              checked={selectedMembers.includes(emp.employeeId)}
+              onChange={() => handleMemberToggle(emp.employeeId)}
+            />
+            {" "}
+            {emp.fullName}
+          </div>
+        ))}
       </div>
 
-      {selectedGame && (
-        <div
-          style={{
-            backgroundColor: "#ffffff",
-            padding: "30px",
-            borderRadius: "14px",
-            boxShadow: "0 8px 30px rgba(0,0,0,0.05)",
-            width: "100%"
-          }}
-        >
-          <FullCalendar
-            plugins={[timeGridPlugin, interactionPlugin]}
-            initialView="timeGridWeek"
-            headerToolbar={{
-              left: "prev,next today",
-              center: "title",
-              right: ""
-            }}
-            allDaySlot={false}
-            slotMinTime="06:00:00"
-            slotMaxTime="23:00:00"
-            nowIndicator={true}
-            expandRows={true}
-            events={calendarEvents}
-            eventClick={handleEventClick}
-            height="80vh"
-          />
-        </div>
-      )}
+      <button
+        className="btn btn-primary mt-3"
+        onClick={handleSubmit}
+      >
+        Submit
+      </button>
     </div>
-  </div>
-);
+  );
+};
+
+export default BookingForm;
+
+import BookingForm from "./pages/BookingForm";
+
+<Route path="/games/slot/:slotId/book" element={<BookingForm />} />
+
+const handleEventClick = (info: any) => {
+  const slotId = Number(info.event.id);
+  navigate(`/games/slot/${slotId}/book`);
+};
