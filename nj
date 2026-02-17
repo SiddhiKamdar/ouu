@@ -1,25 +1,16 @@
-CREATE OR ALTER PROCEDURE pr_gamemod_get_available_slots
-    @game_id INT
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    SELECT
-        gs.slot_id,
-        g.game_name,
-        gs.slot_date,
-        gst.start_time,
-        gst.end_time,
-        gs.status,
-        bm.leader_emp_id,
-        bm.team_size
-    FROM game_slots gs
-    JOIN game_slot_templates gst ON gs.template_id = gst.template_id
-    JOIN games g ON gst.game_id = g.game_id
-    LEFT JOIN booking_master bm 
-        ON bm.slot_id = gs.slot_id 
-        AND bm.status = 'CONFIRMED'
-    WHERE g.game_id = @game_id
-      AND gs.slot_date >= CAST(GETDATE() AS DATE)
-    ORDER BY gs.slot_date, gst.start_time;
-END
+events={slots.map(slot => ({
+  id: slot.slotId,
+  title: slot.status === "OPEN"
+    ? "Open"
+    : slot.leaderEmpId === currentUserId
+      ? "Your Booking"
+      : `Booked (${slot.teamSize})`,
+  start: slot.slotDate + "T" + slot.startTime,
+  end: slot.slotDate + "T" + slot.endTime,
+  backgroundColor:
+    slot.status === "OPEN"
+      ? "#28a745"
+      : slot.leaderEmpId === currentUserId
+        ? "#0d6efd"
+        : "#dc3545"
+}))}
