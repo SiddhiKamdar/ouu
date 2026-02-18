@@ -1,34 +1,25 @@
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.Schema;
 import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
-@PostMapping(
-        value = "/upload",
-        consumes = MediaType.MULTIPART_FORM_DATA_VALUE
-)
-@Operation(summary = "Upload travel document")
-public ResponseEntity<String> uploadDocument(
+@RestController
+@RequestMapping("/api/travel-documents")
+public class TravelDocumentController {
 
-        @Parameter(
-                description = "File to upload",
-                content = @Content(mediaType = MediaType.APPLICATION_OCTET_STREAM_VALUE,
-                        schema = @Schema(type = "string", format = "binary"))
-        )
-        @RequestPart("file") MultipartFile file,
+    @PostMapping(
+            value = "/upload",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE
+    )
+    public String uploadDocument(
+            @RequestPart("file") MultipartFile file,
+            @RequestParam("travelId") Integer travelId,
+            @RequestParam("uploadedById") Integer uploadedById,
+            @RequestParam(value = "employeeId", required = false) Integer employeeId,
+            @RequestParam("documentTypeId") Integer documentTypeId
+    ) {
 
-        @RequestParam("travelId") int travelId,
-        @RequestParam("uploadedById") int uploadedById,
-        @RequestParam(value = "employeeId", required = false) Integer employeeId,
-        @RequestParam("documentTypeId") int documentTypeId
-) {
-
-    travelDocumentService.uploadDocument(
-            file, travelId, uploadedById, employeeId, documentTypeId
-    );
-
-    return ResponseEntity.ok("Document uploaded successfully");
+        return "API detected correctly";
+    }
 }
 
 
