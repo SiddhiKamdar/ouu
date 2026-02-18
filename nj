@@ -1,9 +1,58 @@
+package com.example.backend.entity;
+
+import jakarta.persistence.*;
+import java.util.Date;
+
+@Entity
+@Table(name = "travel_details")
+public class Travel {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "travel_id")
+    private int travelId;
+
+    @Column(name = "destination")
+    private String destination;
+
+    @Column(name = "depart_date")
+    private Date departDate;
+
+    @Column(name = "return_date")
+    private Date returnDate;
+
+    @ManyToOne
+    @JoinColumn(name = "scheduler_id")
+    private Employee scheduler;
+
+    public int getTravelId() { return travelId; }
+    public void setTravelId(int travelId) { this.travelId = travelId; }
+
+    public String getDestination() { return destination; }
+    public void setDestination(String destination) { this.destination = destination; }
+
+    public Date getDepartDate() { return departDate; }
+    public void setDepartDate(Date departDate) { this.departDate = departDate; }
+
+    public Date getReturnDate() { return returnDate; }
+    public void setReturnDate(Date returnDate) { this.returnDate = returnDate; }
+
+    public Employee getScheduler() { return scheduler; }
+    public void setScheduler(Employee scheduler) { this.scheduler = scheduler; }
+}
+
+
+package com.example.backend.entity;
+
+import jakarta.persistence.*;
+
 @Entity
 @Table(name = "travel_employees")
 public class TravelEmployee {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "travel_employee_id")
     private int id;
 
     @ManyToOne
@@ -14,38 +63,195 @@ public class TravelEmployee {
     @JoinColumn(name = "employee_id", nullable = false)
     private Employee employee;
 
-    // getters setters
+    public int getId() { return id; }
+    public void setId(int id) { this.id = id; }
+
+    public Travel getTravel() { return travel; }
+    public void setTravel(Travel travel) { this.travel = travel; }
+
+    public Employee getEmployee() { return employee; }
+    public void setEmployee(Employee employee) { this.employee = employee; }
 }
+
+
+package com.example.backend.repository;
+
+import com.example.backend.entity.TravelEmployee;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
 
 @Repository
 public interface TravelEmployeeRepository 
         extends JpaRepository<TravelEmployee, Integer> {
+
+    List<TravelEmployee> findByTravel_TravelId(int travelId);
 }
 
-public TravelResponseDTO createTravel(TravelRequestDTO request) {
 
-    Employee scheduler = employeeRepository.findById(request.getSchedulerId())
-            .orElseThrow(() -> new RuntimeException("Scheduler not found"));
+package com.example.backend.dto.request;
 
-    Travel travel = new Travel();
-    travel.setDestination(request.getDestination());
-    travel.setDepartDate(request.getDepartDate());
-    travel.setReturnDate(request.getReturnDate());
-    travel.setScheduler(scheduler);
+import java.util.Date;
+import java.util.List;
 
-    Travel savedTravel = travelRepository.save(travel);
+public class TravelRequestDTO {
 
-    for (Long empId : request.getEmployeeIds()) {
+    private List<Long> employeeIds;
+    private Long schedulerId;
+    private String destination;
+    private Date departDate;
+    private Date returnDate;
 
-        Employee employee = employeeRepository.findById(empId)
-                .orElseThrow(() -> new RuntimeException("Employee not found"));
+    public List<Long> getEmployeeIds() { return employeeIds; }
+    public void setEmployeeIds(List<Long> employeeIds) { this.employeeIds = employeeIds; }
 
-        TravelEmployee travelEmployee = new TravelEmployee();
-        travelEmployee.setTravel(savedTravel);
-        travelEmployee.setEmployee(employee);
+    public Long getSchedulerId() { return schedulerId; }
+    public void setSchedulerId(Long schedulerId) { this.schedulerId = schedulerId; }
 
-        travelEmployeeRepository.save(travelEmployee);
+    public String getDestination() { return destination; }
+    public void setDestination(String destination) { this.destination = destination; }
+
+    public Date getDepartDate() { return departDate; }
+    public void setDepartDate(Date departDate) { this.departDate = departDate; }
+
+    public Date getReturnDate() { return returnDate; }
+    public void setReturnDate(Date returnDate) { this.returnDate = returnDate; }
+}
+
+
+package com.example.backend.dto.response;
+
+import java.util.Date;
+import java.util.List;
+
+public class TravelResponseDTO {
+
+    private int travelId;
+    private List<String> employeeNames;
+    private String destination;
+    private Date departDate;
+    private Date returnDate;
+
+    public TravelResponseDTO(int travelId, List<String> employeeNames,
+                             String destination, Date departDate,
+                             Date returnDate) {
+        this.travelId = travelId;
+        this.employeeNames = employeeNames;
+        this.destination = destination;
+        this.departDate = departDate;
+        this.returnDate = returnDate;
     }
 
-    return mapToDTO(savedTravel);
+    public int getTravelId() { return travelId; }
+    public List<String> getEmployeeNames() { return employeeNames; }
+    public String getDestination() { return destination; }
+    public Date getDepartDate() { return departDate; }
+    public Date getReturnDate() { return returnDate; }
 }
+
+
+package com.example.backend.service;
+
+import com.example.backend.dto.request.TravelRequestDTO;
+import com.example.backend.dto.response.TravelResponseDTO;
+import com.example.backend.entity.Employee;
+import com.example.backend.entity.Travel;
+import com.example.backend.entity.TravelEmployee;
+import com.example.backend.repository.EmployeeRepository;
+import com.example.backend.repository.TravelEmployeeRepository;
+import com.example.backend.repository.TravelModuleRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+
+@Service
+public class TravelModuleService {
+
+    @Autowired
+    private TravelModuleRepository travelRepository;
+
+    @Autowired
+    private TravelEmployeeRepository travelEmployeeRepository;
+
+    @Autowired
+    private EmployeeRepository employeeRepository;
+
+    // GET ALL
+    public List<TravelResponseDTO> getAllTravels() {
+        return travelRepository.findAll()
+                .stream()
+                .map(this::mapToDTO)
+                .toList();
+    }
+
+    // GET BY ID
+    public TravelResponseDTO getTravelById(Long id) {
+
+        Travel travel = travelRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Travel not found"));
+
+        return mapToDTO(travel);
+    }
+
+    // CREATE
+    public TravelResponseDTO createTravel(TravelRequestDTO request) {
+
+        Employee scheduler = employeeRepository.findById(request.getSchedulerId())
+                .orElseThrow(() -> new RuntimeException("Scheduler not found"));
+
+        Travel travel = new Travel();
+        travel.setDestination(request.getDestination());
+        travel.setDepartDate(request.getDepartDate());
+        travel.setReturnDate(request.getReturnDate());
+        travel.setScheduler(scheduler);
+
+        Travel savedTravel = travelRepository.save(travel);
+
+        for (Long empId : request.getEmployeeIds()) {
+
+            Employee employee = employeeRepository.findById(empId)
+                    .orElseThrow(() -> new RuntimeException("Employee not found"));
+
+            TravelEmployee travelEmployee = new TravelEmployee();
+            travelEmployee.setTravel(savedTravel);
+            travelEmployee.setEmployee(employee);
+
+            travelEmployeeRepository.save(travelEmployee);
+        }
+
+        return mapToDTO(savedTravel);
+    }
+
+    // DELETE
+    public void deleteTravel(Long id) {
+
+        Travel travel = travelRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Travel not found"));
+
+        travelRepository.delete(travel);
+    }
+
+    // MAPPER
+    private TravelResponseDTO mapToDTO(Travel travel) {
+
+        List<String> employeeNames =
+                travelEmployeeRepository.findByTravel_TravelId(travel.getTravelId())
+                        .stream()
+                        .map(te -> te.getEmployee().getFullName())
+                        .toList();
+
+        return new TravelResponseDTO(
+                travel.getTravelId(),
+                employeeNames,
+                travel.getDestination(),
+                travel.getDepartDate(),
+                travel.getReturnDate()
+        );
+    }
+}
+
+
+
+
