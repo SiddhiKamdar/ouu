@@ -1,7 +1,27 @@
+List<TravelDocument> findByTravel_TravelId(int travelId);
+
+List<TravelDocument> findByTravel_TravelIdAndEmployee_EmployeeId(
+        int travelId, int employeeId
+);
+
+List<TravelDocument> findByTravel_TravelIdAndEmployeeIsNull(int travelId);
+
+
+@PreAuthorize("hasAnyRole('HR','MANAGER','EMPLOYEE')")
+@GetMapping("/{travelId}")
+public ResponseEntity<List<TravelDocument>> getDocuments(
+        @PathVariable int travelId) {
+
+    return ResponseEntity.ok(
+            travelDocumentService.getDocumentsByTravel(travelId)
+    );
+}
+
+
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.Authentication;
 
-public List<TravelResponseDTO> getAllTravels() {
+public List<TravelDocument> getDocumentsByTravel(int travelId) {
 
     Authentication authentication =
             SecurityContextHolder.getContext().getAuthentication();
@@ -10,17 +30,15 @@ public List<TravelResponseDTO> getAllTravels() {
     String role = authentication.getAuthorities()
             .iterator()
             .next()
-            .getAuthority();   
+            .getAuthority();
 
     Employee loggedInUser = employeeRepository
             .findByEmail(email)
             .orElseThrow(() -> new RuntimeException("User not found"));
 
     if (role.equals("ROLE_HR")) {
-        return travelRepository.findAll()
-                .stream()
-                .map(this::mapToDTO)
-                .toList();
+        return travelDocumentRepository
+                .findByTravel_TravelId(travelId);
     }
 
     if (role.equals("ROLE_MANAGER")) {
@@ -33,28 +51,34 @@ public List<TravelResponseDTO> getAllTravels() {
                 .map(Employee::getEmployeeId)
                 .toList();
 
-        return travelEmployeeRepository.findAll()
+        return travelDocumentRepository
+                .findByTravel_TravelId(travelId)
                 .stream()
-                .filter(te -> teamIds.contains(
-                        te.getEmployee().getEmployeeId()))
-                .map(te -> mapToDTO(te.getTravel()))
-                .distinct()
+                .filter(doc -> {
+
+                    if (doc.getEmployee() == null) {
+                        return true; // general doc
+                    }
+
+                    return teamIds.contains(
+                            doc.getEmployee().getEmployeeId()
+                    );
+                })
                 .toList();
     }
 
-    return travelEmployeeRepository.findAll()
+    return travelDocumentRepository
+            .findByTravel_TravelId(travelId)
             .stream()
-            .filter(te -> te.getEmployee()
-                    .getEmployeeId()
-                    == loggedInUser.getEmployeeId())
-            .map(te -> mapToDTO(te.getTravel()))
-            .distinct()
+            .filter(doc -> {
+
+                if (doc.getEmployee() == null) {
+                    return true;
+                }
+
+                return doc.getEmployee()
+                        .getEmployeeId()
+                        == loggedInUser.getEmployeeId();
+            })
             .toList();
 }
-
-
-
-Optional<Employee> findByEmail(String email);
-
-List<Employee> findBySupervisor(Employee supervisor);
-
