@@ -1,311 +1,60 @@
-import org.springframework.http.MediaType;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.Authentication;
 
-@RestController
-@RequestMapping("/api/travel-documents")
-public class TravelDocumentController {
+public List<TravelResponseDTO> getAllTravels() {
 
-    @PostMapping(
-            value = "/upload",
-            consumes = MediaType.MULTIPART_FORM_DATA_VALUE
-    )
-    public String uploadDocument(
-            @RequestPart("file") MultipartFile file,
-            @RequestParam("travelId") Integer travelId,
-            @RequestParam("uploadedById") Integer uploadedById,
-            @RequestParam(value = "employeeId", required = false) Integer employeeId,
-            @RequestParam("documentTypeId") Integer documentTypeId
-    ) {
+    Authentication authentication =
+            SecurityContextHolder.getContext().getAuthentication();
 
-        return "API detected correctly";
-    }
-}
+    String email = authentication.getName();
+    String role = authentication.getAuthorities()
+            .iterator()
+            .next()
+            .getAuthority();   
 
+    Employee loggedInUser = employeeRepository
+            .findByEmail(email)
+            .orElseThrow(() -> new RuntimeException("User not found"));
 
-
-package com.example.backend.controller;
-
-import com.example.backend.service.TravelDocumentService;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
-
-@RestController
-@RequestMapping("/api/travel-documents")
-public class TravelDocumentController {
-
-    @Autowired
-    private TravelDocumentService travelDocumentService;
-
-    @PostMapping("/upload")
-    public ResponseEntity<String> uploadDocument(
-            @RequestParam("file") MultipartFile file,
-            @RequestParam("travelId") int travelId,
-            @RequestParam("uploadedById") int uploadedById,
-            @RequestParam(value = "employeeId", required = false) Integer employeeId,
-            @RequestParam("documentTypeId") int documentTypeId
-    ) {
-
-        travelDocumentService.uploadDocument(
-                file,
-                travelId,
-                uploadedById,
-                employeeId,
-                documentTypeId
-        );
-
-        return ResponseEntity.ok("Document uploaded successfully");
-    }
-}
-
-package com.example.backend.repository;
-
-import com.example.backend.entity.DocumentType;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.stereotype.Repository;
-
-@Repository
-public interface DocumentTypeRepository 
-        extends JpaRepository<DocumentType, Integer> {
-}
-
-
-package com.example.backend.entity;
-
-import jakarta.persistence.*;
-import java.util.Date;
-
-@Entity
-@Table(name = "travel_documents")
-public class TravelDocument {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "travel_document_id")
-    private int id;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "document_type_id", nullable = false)
-    private DocumentType documentType;
-
-    @Column(name = "document_url", nullable = false, length = 300)
-    private String documentUrl;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "uploaded_by_id", nullable = false)
-    private Employee uploadedBy;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "travel_id", nullable = false)
-    private Travel travel;
-
-    // ✅ NEW: for per-employee document support
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "employee_id")
-    private Employee employee;   // NULL = general travel document
-
-    @Column(name = "uploaded_date", nullable = false)
-    private Date uploadedDate;
-
-    @Column(name = "is_deleted", nullable = false)
-    private boolean isDeleted;
-
-    // ---------------- GETTERS & SETTERS ----------------
-
-    public int getId() { return id; }
-    public void setId(int id) { this.id = id; }
-
-    public DocumentType getDocumentType() { return documentType; }
-    public void setDocumentType(DocumentType documentType) { this.documentType = documentType; }
-
-    public String getDocumentUrl() { return documentUrl; }
-    public void setDocumentUrl(String documentUrl) { this.documentUrl = documentUrl; }
-
-    public Employee getUploadedBy() { return uploadedBy; }
-    public void setUploadedBy(Employee uploadedBy) { this.uploadedBy = uploadedBy; }
-
-    public Travel getTravel() { return travel; }
-    public void setTravel(Travel travel) { this.travel = travel; }
-
-    public Employee getEmployee() { return employee; }
-    public void setEmployee(Employee employee) { this.employee = employee; }
-
-    public Date getUploadedDate() { return uploadedDate; }
-    public void setUploadedDate(Date uploadedDate) { this.uploadedDate = uploadedDate; }
-
-    public boolean isDeleted() { return isDeleted; }
-    public void setDeleted(boolean deleted) { isDeleted = deleted; }
-}
-
-package com.example.backend.repository;
-
-import com.example.backend.entity.TravelDocument;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.stereotype.Repository;
-
-import java.util.List;
-
-@Repository
-public interface TravelDocumentRepository 
-        extends JpaRepository<TravelDocument, Integer> {
-
-    List<TravelDocument> findByTravel_TravelId(int travelId);
-
-    List<TravelDocument> findByTravel_TravelIdAndEmployee_EmployeeId(
-            int travelId, int employeeId
-    );
-}
-
-package com.example.backend.service;
-
-import com.example.backend.entity.*;
-import com.example.backend.repository.*;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
-
-import java.io.File;
-import java.io.IOException;
-import java.util.Date;
-import java.util.List;
-import java.util.UUID;
-
-@Service
-public class TravelDocumentService {
-
-    @Value("${file.upload-dir}")
-    private String uploadDir;
-
-    @Autowired
-    private TravelDocumentRepository travelDocumentRepository;
-
-    @Autowired
-    private TravelModuleRepository travelRepository;
-
-    @Autowired
-    private EmployeeRepository employeeRepository;
-
-    @Autowired
-    private DocumentTypeRepository documentTypeRepository;
-
-    // ================= UPLOAD DOCUMENT =================
-    public void uploadDocument(
-            MultipartFile file,
-            int travelId,
-            int uploadedById,
-            Integer employeeId,
-            int documentTypeId
-    ) {
-
-        try {
-
-            // 1️⃣ Create folder if not exists
-            File directory = new File(uploadDir);
-            if (!directory.exists()) {
-                directory.mkdirs();
-            }
-
-            // 2️⃣ Generate unique filename
-            String fileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
-            String filePath = uploadDir + File.separator + fileName;
-
-            // 3️⃣ Save file physically
-            file.transferTo(new File(filePath));
-
-            // 4️⃣ Fetch DB entities
-            Travel travel = travelRepository.findById((long) travelId)
-                    .orElseThrow(() -> new RuntimeException("Travel not found"));
-
-            Employee uploadedBy = employeeRepository.findById((long) uploadedById)
-                    .orElseThrow(() -> new RuntimeException("Uploader not found"));
-
-            DocumentType documentType = documentTypeRepository.findById(documentTypeId)
-                    .orElseThrow(() -> new RuntimeException("Document type not found"));
-
-            // 5️⃣ Create TravelDocument
-            TravelDocument document = new TravelDocument();
-            document.setTravel(travel);
-            document.setUploadedBy(uploadedBy);
-            document.setDocumentType(documentType);
-            document.setDocumentUrl(filePath);
-            document.setUploadedDate(new Date());
-            document.setDeleted(false);
-
-            // Optional employee specific document
-            if (employeeId != null) {
-                Employee employee = employeeRepository.findById((long) employeeId)
-                        .orElseThrow(() -> new RuntimeException("Employee not found"));
-                document.setEmployee(employee);
-            }
-
-            travelDocumentRepository.save(document);
-
-        } catch (IOException e) {
-            throw new RuntimeException("File upload failed");
-        }
+    if (role.equals("ROLE_HR")) {
+        return travelRepository.findAll()
+                .stream()
+                .map(this::mapToDTO)
+                .toList();
     }
 
-    // ================= GET DOCUMENTS BY TRAVEL =================
-    public List<TravelDocument> getDocumentsByTravel(int travelId) {
-        return travelDocumentRepository.findByTravel_TravelId(travelId);
+    if (role.equals("ROLE_MANAGER")) {
+
+        List<Employee> teamMembers =
+                employeeRepository.findBySupervisor(loggedInUser);
+
+        List<Integer> teamIds = teamMembers
+                .stream()
+                .map(Employee::getEmployeeId)
+                .toList();
+
+        return travelEmployeeRepository.findAll()
+                .stream()
+                .filter(te -> teamIds.contains(
+                        te.getEmployee().getEmployeeId()))
+                .map(te -> mapToDTO(te.getTravel()))
+                .distinct()
+                .toList();
     }
 
+    return travelEmployeeRepository.findAll()
+            .stream()
+            .filter(te -> te.getEmployee()
+                    .getEmployeeId()
+                    == loggedInUser.getEmployeeId())
+            .map(te -> mapToDTO(te.getTravel()))
+            .distinct()
+            .toList();
 }
 
 
-package com.example.backend.controller;
 
-import com.example.backend.entity.TravelDocument;
-import com.example.backend.service.TravelDocumentService;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
+Optional<Employee> findByEmail(String email);
 
-import java.util.List;
-
-@RestController
-@RequestMapping("/api/travel-documents")
-public class TravelDocumentController {
-
-    @Autowired
-    private TravelDocumentService travelDocumentService;
-
-    // ========= UPLOAD =========
-    @PostMapping("/upload")
-    public ResponseEntity<String> uploadDocument(
-            @RequestParam("file") MultipartFile file,
-            @RequestParam("travelId") int travelId,
-            @RequestParam("uploadedById") int uploadedById,
-            @RequestParam(value = "employeeId", required = false) Integer employeeId,
-            @RequestParam("documentTypeId") int documentTypeId
-    ) {
-
-        travelDocumentService.uploadDocument(
-                file, travelId, uploadedById, employeeId, documentTypeId
-        );
-
-        return ResponseEntity.ok("Document uploaded successfully");
-    }
-
-    // ========= GET BY TRAVEL =========
-    @GetMapping("/{travelId}")
-    public ResponseEntity<List<TravelDocument>> getDocuments(
-            @PathVariable int travelId) {
-
-        return ResponseEntity.ok(
-                travelDocumentService.getDocumentsByTravel(travelId)
-        );
-    }
-}
-
-
-file.upload-dir=uploads/travel-documents
-spring.servlet.multipart.max-file-size=10MB
-spring.servlet.multipart.max-request-size=10MB
-
-
+List<Employee> findBySupervisor(Employee supervisor);
 
