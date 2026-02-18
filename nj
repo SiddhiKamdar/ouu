@@ -1,84 +1,230 @@
-List<TravelDocument> findByTravel_TravelId(int travelId);
+import axiosInstance from "./axiosInstance";
 
-List<TravelDocument> findByTravel_TravelIdAndEmployee_EmployeeId(
-        int travelId, int employeeId
-);
+export interface Travel {
+  travelId: number;
+  employeeNames: string[];
+  destination: string;
+  departDate: string;
+  returnDate: string;
+}
 
-List<TravelDocument> findByTravel_TravelIdAndEmployeeIsNull(int travelId);
+export interface CreateTravelRequest {
+  schedulerId: number;
+  employeeIds: number[];
+  destination: string;
+  departDate: string;
+  returnDate: string;
+}
+
+export const getTravels = async (): Promise<Travel[]> => {
+  const response = await axiosInstance.get("/api/travel");
+  return response.data;
+};
+
+export const createTravel = async (
+  data: CreateTravelRequest
+): Promise<void> => {
+  await axiosInstance.post("/api/travel", data);
+};
 
 
-@PreAuthorize("hasAnyRole('HR','MANAGER','EMPLOYEE')")
-@GetMapping("/{travelId}")
-public ResponseEntity<List<TravelDocument>> getDocuments(
-        @PathVariable int travelId) {
+import axiosInstance from "./axiosInstance";
 
-    return ResponseEntity.ok(
-            travelDocumentService.getDocumentsByTravel(travelId)
+export interface Employee {
+  employeeId: number;
+  fullName: string;
+}
+
+export const getEmployees = async (): Promise<Employee[]> => {
+  const response = await axiosInstance.get("/api/employees");
+  return response.data;
+};
+
+
+import React, { useEffect, useState, type FormEvent } from "react";
+import { useNavigate } from "react-router-dom";
+import { createTravel } from "../services/travelService";
+import { getEmployees, type Employee } from "../services/employeeService";
+
+const TravelCreate: React.FC = () => {
+  const navigate = useNavigate();
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
+
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [selectedEmployees, setSelectedEmployees] = useState<number[]>([]);
+  const [destination, setDestination] = useState("");
+  const [departDate, setDepartDate] = useState("");
+  const [returnDate, setReturnDate] = useState("");
+
+  useEffect(() => {
+    loadEmployees();
+  }, []);
+
+  const loadEmployees = async () => {
+    const data = await getEmployees();
+    setEmployees(data);
+  };
+
+  const handleEmployeeChange = (id: number) => {
+    setSelectedEmployees((prev) =>
+      prev.includes(id)
+        ? prev.filter((empId) => empId !== id)
+        : [...prev, id]
     );
-}
+  };
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+
+    await createTravel({
+      schedulerId: user.employeeId,
+      employeeIds: selectedEmployees,
+      destination,
+      departDate,
+      returnDate
+    });
+
+    navigate("/app/travel");
+  };
+
+  return (
+    <div className="card p-4 shadow-sm" style={{ maxWidth: "600px" }}>
+      <h4 className="mb-4">Create Travel</h4>
+
+      <form onSubmit={handleSubmit}>
+
+        <div className="mb-3">
+          <label className="form-label">Destination</label>
+          <input
+            type="text"
+            className="form-control"
+            value={destination}
+            onChange={(e) => setDestination(e.target.value)}
+            required
+          />
+        </div>
+
+        <div className="mb-3">
+          <label className="form-label">Departure Date</label>
+          <input
+            type="date"
+            className="form-control"
+            value={departDate}
+            onChange={(e) => setDepartDate(e.target.value)}
+            required
+          />
+        </div>
+
+        <div className="mb-3">
+          <label className="form-label">Return Date</label>
+          <input
+            type="date"
+            className="form-control"
+            value={returnDate}
+            onChange={(e) => setReturnDate(e.target.value)}
+            required
+          />
+        </div>
+
+        <div className="mb-3">
+          <label className="form-label">Select Employees</label>
+          <div className="border rounded p-2" style={{ maxHeight: "150px", overflowY: "auto" }}>
+            {employees.map((emp) => (
+              <div key={emp.employeeId} className="form-check">
+                <input
+                  type="checkbox"
+                  className="form-check-input"
+                  checked={selectedEmployees.includes(emp.employeeId)}
+                  onChange={() => handleEmployeeChange(emp.employeeId)}
+                />
+                <label className="form-check-label">
+                  {emp.fullName}
+                </label>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <button type="submit" className="btn btn-success w-100">
+          Create Travel
+        </button>
+      </form>
+    </div>
+  );
+};
+
+export default TravelCreate;
 
 
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.Authentication;
 
-public List<TravelDocument> getDocumentsByTravel(int travelId) {
+import React, { useEffect, useState } from "react";
+import { Container, Row, Col, Card } from "react-bootstrap";
+import { useNavigate } from "react-router-dom";
+import { getTravels, type Travel } from "../services/travelService";
 
-    Authentication authentication =
-            SecurityContextHolder.getContext().getAuthentication();
+const TravelDisplay: React.FC = () => {
+  const navigate = useNavigate();
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
 
-    String email = authentication.getName();
-    String role = authentication.getAuthorities()
-            .iterator()
-            .next()
-            .getAuthority();
+  const [travels, setTravels] = useState<Travel[]>([]);
 
-    Employee loggedInUser = employeeRepository
-            .findByEmail(email)
-            .orElseThrow(() -> new RuntimeException("User not found"));
+  useEffect(() => {
+    loadTravels();
+  }, []);
 
-    if (role.equals("ROLE_HR")) {
-        return travelDocumentRepository
-                .findByTravel_TravelId(travelId);
-    }
+  const loadTravels = async () => {
+    const data = await getTravels();
+    setTravels(data);
+  };
 
-    if (role.equals("ROLE_MANAGER")) {
+  return (
+    <Container fluid style={{ marginTop: "20px" }}>
 
-        List<Employee> teamMembers =
-                employeeRepository.findBySupervisor(loggedInUser);
+      {user.role === "HR" && (
+        <button
+          className="btn btn-success mb-3"
+          onClick={() => navigate("/app/travel/create")}
+        >
+          + Create Travel
+        </button>
+      )}
 
-        List<Integer> teamIds = teamMembers
-                .stream()
-                .map(Employee::getEmployeeId)
-                .toList();
+      <Row className="gy-4">
+        {travels.map((travel) => (
+          <Col key={travel.travelId} sm={12} md={6} lg={4}>
+            <Card>
+              <Card.Body>
+                <Card.Title>Travel #{travel.travelId}</Card.Title>
+                <Card.Text>
+                  Employees: {travel.employeeNames?.join(", ")}
+                </Card.Text>
+                <Card.Text>
+                  Destination: {travel.destination}
+                </Card.Text>
+                <Card.Text>
+                  Departure: {new Date(travel.departDate).toLocaleDateString()}
+                </Card.Text>
+                <Card.Text>
+                  Return: {new Date(travel.returnDate).toLocaleDateString()}
+                </Card.Text>
 
-        return travelDocumentRepository
-                .findByTravel_TravelId(travelId)
-                .stream()
-                .filter(doc -> {
+                <button
+                  className="btn btn-primary"
+                  onClick={() => navigate(`/app/travel/${travel.travelId}`)}
+                >
+                  Detail
+                </button>
+              </Card.Body>
+            </Card>
+          </Col>
+        ))}
+      </Row>
+    </Container>
+  );
+};
 
-                    if (doc.getEmployee() == null) {
-                        return true; // general doc
-                    }
+export default TravelDisplay;
 
-                    return teamIds.contains(
-                            doc.getEmployee().getEmployeeId()
-                    );
-                })
-                .toList();
-    }
 
-    return travelDocumentRepository
-            .findByTravel_TravelId(travelId)
-            .stream()
-            .filter(doc -> {
 
-                if (doc.getEmployee() == null) {
-                    return true;
-                }
 
-                return doc.getEmployee()
-                        .getEmployeeId()
-                        == loggedInUser.getEmployeeId();
-            })
-            .toList();
-}
