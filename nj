@@ -1,69 +1,51 @@
-package com.example.backend.config.security;
+@Entity
+@Table(name = "travel_employees")
+public class TravelEmployee {
 
-import jakarta.servlet.FilterChain;
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private int id;
 
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.stereotype.Component;
-import org.springframework.web.filter.OncePerRequestFilter;
+    @ManyToOne
+    @JoinColumn(name = "travel_id", nullable = false)
+    private Travel travel;
 
-import java.io.IOException;
-import java.util.List;
+    @ManyToOne
+    @JoinColumn(name = "employee_id", nullable = false)
+    private Employee employee;
 
-@Component
-public class JwtFilter extends OncePerRequestFilter {
+    // getters setters
+}
 
-    @Autowired
-    private JwtUtil jwtUtil;
+@Repository
+public interface TravelEmployeeRepository 
+        extends JpaRepository<TravelEmployee, Integer> {
+}
 
-    @Override
-    protected void doFilterInternal(
-            HttpServletRequest request,
-            HttpServletResponse response,
-            FilterChain filterChain)
-            throws ServletException, IOException {
+public TravelResponseDTO createTravel(TravelRequestDTO request) {
 
-        System.out.println("JWT Filter Executed");
+    Employee scheduler = employeeRepository.findById(request.getSchedulerId())
+            .orElseThrow(() -> new RuntimeException("Scheduler not found"));
 
-        String header = request.getHeader("Authorization");
+    Travel travel = new Travel();
+    travel.setDestination(request.getDestination());
+    travel.setDepartDate(request.getDepartDate());
+    travel.setReturnDate(request.getReturnDate());
+    travel.setScheduler(scheduler);
 
-        if (header != null && header.startsWith("Bearer ")) {
+    Travel savedTravel = travelRepository.save(travel);
 
-            String token = header.substring(7);
+    for (Long empId : request.getEmployeeIds()) {
 
-            try {
-                String email = jwtUtil.extractEmail(token);
-                String role = jwtUtil.extractRole(token);
+        Employee employee = employeeRepository.findById(empId)
+                .orElseThrow(() -> new RuntimeException("Employee not found"));
 
-                // Add ROLE_ prefix for Spring Security
-                List<GrantedAuthority> authorities =
-                        List.of(new SimpleGrantedAuthority("ROLE_" + role));
+        TravelEmployee travelEmployee = new TravelEmployee();
+        travelEmployee.setTravel(savedTravel);
+        travelEmployee.setEmployee(employee);
 
-                UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(
-                                email,
-                                null,
-                                authorities
-                        );
-
-                SecurityContextHolder.getContext()
-                        .setAuthentication(authentication);
-
-                System.out.println("Authenticated User: " + email);
-                System.out.println("Authorities: " + authorities);
-
-            } catch (Exception e) {
-                System.out.println("JWT Validation Failed");
-                e.printStackTrace();
-            }
-        }
-
-        filterChain.doFilter(request, response);
+        travelEmployeeRepository.save(travelEmployee);
     }
+
+    return mapToDTO(savedTravel);
 }
