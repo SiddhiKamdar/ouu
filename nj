@@ -1,3 +1,50 @@
+package com.example.backend.controller;
+
+import com.example.backend.dto.request.TravelRequestDTO;
+import com.example.backend.dto.response.TravelResponseDTO;
+import com.example.backend.service.TravelModuleService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/travel")
+public class TravelModuleController {
+
+    @Autowired
+    private TravelModuleService travelModuleService;
+
+    // GET ALL
+    @GetMapping
+    public ResponseEntity<List<TravelResponseDTO>> getAllTravels() {
+        return ResponseEntity.ok(travelModuleService.getAllTravels());
+    }
+
+    // GET BY ID
+    @GetMapping("/{id}")
+    public ResponseEntity<TravelResponseDTO> getTravelById(@PathVariable Long id) {
+        return ResponseEntity.ok(travelModuleService.getTravelById(id));
+    }
+
+    // CREATE
+    @PostMapping
+    public ResponseEntity<TravelResponseDTO> createTravel(
+            @RequestBody TravelRequestDTO request) {
+
+        return ResponseEntity.ok(travelModuleService.createTravel(request));
+    }
+
+    // DELETE
+    @DeleteMapping("/{id}")
+    public ResponseEntity<String> deleteTravel(@PathVariable Long id) {
+        travelModuleService.deleteTravel(id);
+        return ResponseEntity.ok("Travel deleted successfully");
+    }
+}
+
+
 package com.example.backend.entity;
 
 import jakarta.persistence.*;
