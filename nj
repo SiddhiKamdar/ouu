@@ -1,3 +1,38 @@
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import org.springframework.http.MediaType;
+
+@PostMapping(
+        value = "/upload",
+        consumes = MediaType.MULTIPART_FORM_DATA_VALUE
+)
+@Operation(summary = "Upload travel document")
+public ResponseEntity<String> uploadDocument(
+
+        @Parameter(
+                description = "File to upload",
+                content = @Content(mediaType = MediaType.APPLICATION_OCTET_STREAM_VALUE,
+                        schema = @Schema(type = "string", format = "binary"))
+        )
+        @RequestPart("file") MultipartFile file,
+
+        @RequestParam("travelId") int travelId,
+        @RequestParam("uploadedById") int uploadedById,
+        @RequestParam(value = "employeeId", required = false) Integer employeeId,
+        @RequestParam("documentTypeId") int documentTypeId
+) {
+
+    travelDocumentService.uploadDocument(
+            file, travelId, uploadedById, employeeId, documentTypeId
+    );
+
+    return ResponseEntity.ok("Document uploaded successfully");
+}
+
+
+
 package com.example.backend.controller;
 
 import com.example.backend.service.TravelDocumentService;
