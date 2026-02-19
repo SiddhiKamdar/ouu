@@ -1,125 +1,140 @@
-package com.example.backend.dto.response;
+Now we move from “file stored” → “file served” properly.
 
-import java.util.Date;
+Right now:
 
-public class TravelDocumentResponseDTO {
+You saved file inside:
 
-    private int id;
-    private String documentUrl;
-    private Date uploadedDate;
-    private String uploadedByName;
+uploads/travel-documents/
 
-    public TravelDocumentResponseDTO(
-            int id,
-            String documentUrl,
-            Date uploadedDate,
-            String uploadedByName
-    ) {
-        this.id = id;
-        this.documentUrl = documentUrl;
-        this.uploadedDate = uploadedDate;
-        this.uploadedByName = uploadedByName;
+
+DB stores:
+
+uploads/travel-documents/file.pdf
+
+
+Frontend only shows filename
+
+But browser cannot access it directly
+
+Because Spring Boot is not serving that folder as static resource.
+
+🎯 Goal
+
+When clicking document:
+
+http://localhost:8080/uploads/travel-documents/file.pdf
+
+
+Browser should open the PDF.
+
+✅ STEP 1 — Expose Upload Folder As Static Resource
+
+In your backend, create this config class:
+
+📁 config/FileUploadConfig.java
+
+package com.example.backend.config;
+
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+
+import org.springframework.beans.factory.annotation.Value;
+
+@Configuration
+public class FileUploadConfig implements WebMvcConfigurer {
+
+    @Value("${file.upload-dir}")
+    private String uploadDir;
+
+    @Override
+    public void addResourceHandlers(ResourceHandlerRegistry registry) {
+
+        registry.addResourceHandler("/uploads/**")
+                .addResourceLocations("file:" + uploadDir);
     }
-
-    public int getId() { return id; }
-    public String getDocumentUrl() { return documentUrl; }
-    public Date getUploadedDate() { return uploadedDate; }
-    public String getUploadedByName() { return uploadedByName; }
 }
 
-public List<TravelDocumentResponseDTO> getDocumentsByTravel(int travelId)
+🧠 What This Does
+
+Maps:
+
+http://localhost:8080/uploads/**
 
 
-import com.example.backend.dto.response.TravelDocumentResponseDTO;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.Authentication;
+To your physical folder:
 
-public List<TravelDocumentResponseDTO> getDocumentsByTravel(int travelId) {
-
-    Authentication authentication =
-            SecurityContextHolder.getContext().getAuthentication();
-
-    String email = authentication.getName();
-    String role = authentication.getAuthorities()
-            .iterator()
-            .next()
-            .getAuthority();
-
-    Employee loggedInUser = employeeRepository
-            .findByEmail(email)
-            .orElseThrow(() -> new RuntimeException("User not found"));
-
-    List<TravelDocument> documents;
-
-    // HR → see all
-    if (role.equals("ROLE_HR")) {
-        documents = travelDocumentRepository
-                .findByTravel_TravelId(travelId);
-    }
-
-    // MANAGER → team documents
-    else if (role.equals("ROLE_MANAGER")) {
-
-        List<Employee> teamMembers =
-                employeeRepository.findBySupervisor(loggedInUser);
-
-        List<Integer> teamIds = teamMembers.stream()
-                .map(Employee::getEmployeeId)
-                .toList();
-
-        documents = travelDocumentRepository
-                .findByTravel_TravelId(travelId)
-                .stream()
-                .filter(doc -> {
-                    if (doc.getEmployee() == null) return true;
-                    return teamIds.contains(
-                            doc.getEmployee().getEmployeeId()
-                    );
-                })
-                .toList();
-    }
-
-    // EMPLOYEE → general + own
-    else {
-        documents = travelDocumentRepository
-                .findByTravel_TravelId(travelId)
-                .stream()
-                .filter(doc -> {
-                    if (doc.getEmployee() == null) return true;
-                    return doc.getEmployee().getEmployeeId()
-                            == loggedInUser.getEmployeeId();
-                })
-                .toList();
-    }
-
-    // 🔥 Convert Entity → DTO (THIS FIXES YOUR ERROR)
-    return documents.stream()
-            .map(doc -> new TravelDocumentResponseDTO(
-                    doc.getId(),
-                    doc.getDocumentUrl(),
-                    doc.getUploadedDate(),
-                    doc.getUploadedBy() != null
-                            ? doc.getUploadedBy().getFullName()
-                            : "System"
-            ))
-            .toList();
-}
+uploads/travel-documents/
 
 
+Now Spring serves files directly.
+
+✅ STEP 2 — Make Sure DB Stores RELATIVE Path
+
+You should be storing:
+
+document.setDocumentUrl("uploads/travel-documents/" + fileName);
 
 
-import com.example.backend.dto.response.TravelDocumentResponseDTO;
+NOT full system path.
 
-@PreAuthorize("hasAnyAuthority('ROLE_HR','ROLE_MANAGER','ROLE_EMPLOYEE')")
-@GetMapping("/{travelId}")
-public ResponseEntity<List<TravelDocumentResponseDTO>> getDocuments(
-        @PathVariable int travelId) {
+✅ STEP 3 — Update Frontend To Render PDF
 
-    return ResponseEntity.ok(
-            travelDocumentService.getDocumentsByTravel(travelId)
-    );
-}
+In TravelDetail.tsx change document list:
 
+Replace:
 
+<li key={doc.id}>
+  {doc.documentUrl.split(/[/\\]/).pop()}
+</li>
 
 
+With:
+
+<li key={doc.id}>
+  <a
+    href={`http://localhost:8080/${doc.documentUrl}`}
+    target="_blank"
+    rel="noopener noreferrer"
+  >
+    {doc.documentUrl.split(/[/\\]/).pop()}
+  </a>
+</li>
+
+
+Now clicking opens PDF in new tab.
+
+🚀 RESULT
+
+Now:
+
+Click document
+
+PDF opens in browser
+
+No backend controller needed
+
+Clean architecture
+
+🎯 OPTIONAL — Show PDF Inline (Advanced)
+
+If you want to embed inside page:
+
+<iframe
+  src={`http://localhost:8080/${doc.documentUrl}`}
+  width="100%"
+  height="500px"
+/>
+
+
+But link is cleaner for now.
+
+🔥 After Doing This
+
+Restart backend
+
+Refresh frontend
+
+Click document
+
+PDF should open.
