@@ -138,3 +138,13 @@ Refresh frontend
 Click document
 
 PDF should open.
+
+registry.addResourceHandler("/uploads/**")
+        .addResourceLocations("file:" + uploadDir);
+
+
+file.upload-dir=${user.dir}/uploads/travel-documents/
+
+
+.requestMatchers("/uploads/**").permitAll()
+
