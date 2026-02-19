@@ -1,139 +1,33 @@
-package com.example.backend.entity;
-
-import jakarta.persistence.*;
-import java.math.BigDecimal;
-import java.util.Date;
-
-@Entity
-@Table(name = "expenses_detail")
-public class ExpensesDetail {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "expense_id")
-    private int expenseId;
-
-    @ManyToOne
-    @JoinColumn(name = "travel_id", nullable = false)
-    private Travel travel;
-
-    @ManyToOne
-    @JoinColumn(name = "expense_type_id", nullable = false)
-    private ExpensesType expenseType;
-
-    @ManyToOne
-    @JoinColumn(name = "employee_id")
-    private Employee employee;
-
-    @Column(name = "amount", nullable = false)
-    private BigDecimal amount;
-
-    @Column(name = "comment")
-    private String comment;
-
-    @Column(name = "proof_url", nullable = false)
-    private String proofUrl;
-
-    @Column(name = "expense_date")
-    private Date expenseDate;
-
-    @Column(name = "upload_date")
-    private Date uploadDate;
-
-    @Column(name = "is_deleted")
-    private Boolean isDeleted = false;
-
-    // getters setters
-}
-
-
-@Entity
-@Table(name = "expense_type")
-public class ExpensesType {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "expense_type_id")
-    private int expenseTypeId;
-
-    @Column(name = "expense_type_name")
-    private String expenseTypeName;
-
-    // getters setters
-}
-
-
-package com.example.backend.repository;
-
-import com.example.backend.entity.ExpensesDetail;
-import org.springframework.data.jpa.repository.JpaRepository;
-
-import java.util.List;
-
-public interface ExpenseRepository
-        extends JpaRepository<ExpensesDetail, Integer> {
-
-    List<ExpensesDetail> findByEmployee_EmployeeId(int employeeId);
-}
-
-
-package com.example.backend.repository;
-
-import com.example.backend.entity.ExpensesType;
-import org.springframework.data.jpa.repository.JpaRepository;
-
-public interface ExpenseTypeRepository
-        extends JpaRepository<ExpensesType, Integer> {
-}
-
-package com.example.backend.dto.request;
-
-import java.math.BigDecimal;
-import java.util.Date;
-
-public class ExpenseRequestDTO {
-
-    private int travelId;
-    private int expenseTypeId;
-    private BigDecimal amount;
-    private String comment;
-    private Date expenseDate;
-
-    // getters setters
-}
-
-
-package com.example.backend.dto.response;
-
-import java.math.BigDecimal;
-import java.util.Date;
-
 public class ExpenseResponseDTO {
 
-    private int expenseId;
-    private String travelDestination;
+    private Integer expenseId;
+    private String destination;
     private String expenseType;
     private BigDecimal amount;
     private String proofUrl;
     private Date expenseDate;
+    private String status;
+    private String hrRemark;
 
     public ExpenseResponseDTO(
-            int expenseId,
-            String travelDestination,
+            Integer expenseId,
+            String destination,
             String expenseType,
             BigDecimal amount,
             String proofUrl,
-            Date expenseDate) {
+            Date expenseDate,
+            String status,
+            String hrRemark) {
 
         this.expenseId = expenseId;
-        this.travelDestination = travelDestination;
+        this.destination = destination;
         this.expenseType = expenseType;
         this.amount = amount;
         this.proofUrl = proofUrl;
         this.expenseDate = expenseDate;
+        this.status = status;
+        this.hrRemark = hrRemark;
     }
-
-    // getters
 }
 
 
@@ -151,96 +45,240 @@ public class ExpenseService {
 
     @Autowired
     private EmployeeRepository employeeRepository;
-public ExpenseResponseDTO createExpense(
-        ExpenseRequestDTO request,
-        MultipartFile proofFile) throws Exception {
 
-    Authentication auth =
-            SecurityContextHolder.getContext().getAuthentication();
+    @Autowired
+    private ApprovalStatusRepository approvalStatusRepository;
 
-    String email = auth.getName();
+    @Autowired
+    private ExpenseReviewRepository reviewRepository;
 
-    Employee employee =
-            employeeRepository.findByEmail(email)
-                    .orElseThrow();
 
-    Travel travel =
-            travelRepository.findById(
-                    (long) request.getTravelId())
-                    .orElseThrow();
+    // ================= CREATE =================
+    public ExpenseResponseDTO createExpense(
+            ExpenseRequestDTO request,
+            MultipartFile proofFile) throws Exception {
 
-    ExpensesType type =
-            expenseTypeRepository.findById(
-                    request.getExpenseTypeId())
-                    .orElseThrow();
+        Authentication auth =
+                SecurityContextHolder.getContext().getAuthentication();
 
-    // ===== SAVE FILE =====
-    String uploadDir =
-            System.getProperty("user.dir")
-                    + "/uploads/expense-proofs/";
+        Employee employee =
+                employeeRepository
+                        .findByEmail(auth.getName())
+                        .orElseThrow();
 
-    File dir = new File(uploadDir);
-    if (!dir.exists()) dir.mkdirs();
+        Travel travel =
+                travelRepository
+                        .findById((long) request.getTravelId())
+                        .orElseThrow();
 
-    String fileName =
-            System.currentTimeMillis()
-                    + "_" +
-                    proofFile.getOriginalFilename();
+        // ✅ TRAVEL OWNERSHIP CHECK
+        boolean assigned =
+                travel.getTravelEmployees()
+                        .stream()
+                        .anyMatch(te ->
+                                te.getEmployee()
+                                        .getEmployeeId()
+                                        .equals(employee.getEmployeeId()));
 
-    proofFile.transferTo(
-            new File(uploadDir + fileName));
+        if (!assigned)
+            throw new RuntimeException("Not assigned to this travel");
 
-    // ===== ENTITY =====
-    ExpensesDetail expense = new ExpensesDetail();
 
-    expense.setEmployee(employee);
-    expense.setTravel(travel);
-    expense.setExpenseType(type);
-    expense.setAmount(request.getAmount());
-    expense.setComment(request.getComment());
-    expense.setExpenseDate(request.getExpenseDate());
-    expense.setUploadDate(new Date());
-    expense.setProofUrl(
-            "uploads/expense-proofs/" + fileName
-    );
+        // ✅ EXPENSE WINDOW CHECK
+        Date today = new Date();
 
-    ExpensesDetail saved =
-            expenseRepository.save(expense);
+        Date start = travel.getDepartDate();
 
-    return mapToDTO(saved);
+        Date end = new Date(
+                travel.getReturnDate().getTime()
+                        + (10L * 24 * 60 * 60 * 1000)
+        );
+
+        if (today.before(start) || today.after(end))
+            throw new RuntimeException(
+                    "Expense submission window closed");
+
+
+        // ✅ FILE SAVE
+        String uploadDir =
+                System.getProperty("user.dir")
+                        + "/uploads/expense-proofs/";
+
+        File dir = new File(uploadDir);
+        if (!dir.exists()) dir.mkdirs();
+
+        String fileName =
+                System.currentTimeMillis()
+                        + "_" +
+                        proofFile.getOriginalFilename();
+
+        proofFile.transferTo(
+                new File(uploadDir + fileName));
+
+        ExpensesType type =
+                expenseTypeRepository
+                        .findById(request.getExpenseTypeId())
+                        .orElseThrow();
+
+        ApprovalStatus draftStatus =
+                approvalStatusRepository.findById(1)
+                        .orElseThrow();
+
+        ExpensesDetail expense = new ExpensesDetail();
+
+        expense.setEmployee(employee);
+        expense.setTravel(travel);
+        expense.setExpenseType(type);
+        expense.setAmount(request.getAmount());
+        expense.setComment(request.getComment());
+        expense.setExpenseDate(request.getExpenseDate());
+        expense.setUploadDate(new Date());
+        expense.setProofUrl(
+                "uploads/expense-proofs/" + fileName);
+        expense.setApprovalStatus(draftStatus);
+
+        return mapToDTO(
+                expenseRepository.save(expense));
+    }
+
+
+    // ================= SUBMIT =================
+    public void submitExpense(Integer expenseId) {
+
+        ExpensesDetail expense =
+                expenseRepository.findById(expenseId)
+                        .orElseThrow();
+
+        ApprovalStatus submitted =
+                approvalStatusRepository
+                        .findById(2)
+                        .orElseThrow();
+
+        expense.setApprovalStatus(submitted);
+
+        expenseRepository.save(expense);
+    }
+
+
+    // ================= HR APPROVE =================
+    public void approveExpense(Integer expenseId,
+                               String remark) {
+
+        Employee hr = getLoggedInEmployee();
+
+        ExpensesDetail expense =
+                expenseRepository.findById(expenseId)
+                        .orElseThrow();
+
+        ApprovalStatus approved =
+                approvalStatusRepository
+                        .findById(3)
+                        .orElseThrow();
+
+        expense.setApprovalStatus(approved);
+        expenseRepository.save(expense);
+
+        ExpenseReview review =
+                new ExpenseReview();
+
+        review.setExpense(expense);
+        review.setReviewedBy(hr);
+        review.setComment(remark);
+        review.setReviewStatus(approved);
+
+        reviewRepository.save(review);
+    }
+
+
+    // ================= HR REJECT =================
+    public void rejectExpense(Integer expenseId,
+                              String remark) {
+
+        if (remark == null || remark.isBlank())
+            throw new RuntimeException(
+                    "Remark required");
+
+        Employee hr = getLoggedInEmployee();
+
+        ExpensesDetail expense =
+                expenseRepository.findById(expenseId)
+                        .orElseThrow();
+
+        ApprovalStatus rejected =
+                approvalStatusRepository
+                        .findById(4)
+                        .orElseThrow();
+
+        expense.setApprovalStatus(rejected);
+        expenseRepository.save(expense);
+
+        ExpenseReview review =
+                new ExpenseReview();
+
+        review.setExpense(expense);
+        review.setReviewedBy(hr);
+        review.setComment(remark);
+        review.setReviewStatus(rejected);
+
+        reviewRepository.save(review);
+    }
+
+
+    // ================= EMPLOYEE VIEW =================
+    public List<ExpenseResponseDTO> getMyExpenses() {
+
+        Employee emp = getLoggedInEmployee();
+
+        return expenseRepository
+                .findByEmployee_EmployeeId(
+                        emp.getEmployeeId())
+                .stream()
+                .map(this::mapToDTO)
+                .toList();
+    }
+
+
+    private Employee getLoggedInEmployee() {
+
+        Authentication auth =
+                SecurityContextHolder
+                        .getContext()
+                        .getAuthentication();
+
+        return employeeRepository
+                .findByEmail(auth.getName())
+                .orElseThrow();
+    }
+
+
+    private ExpenseResponseDTO mapToDTO(
+            ExpensesDetail e) {
+
+        String remark =
+                reviewRepository.findAll()
+                        .stream()
+                        .filter(r ->
+                                r.getExpense()
+                                        .getExpenseId()
+                                        .equals(e.getExpenseId()))
+                        .map(ExpenseReview::getComment)
+                        .findFirst()
+                        .orElse(null);
+
+        return new ExpenseResponseDTO(
+                e.getExpenseId(),
+                e.getTravel().getDestination(),
+                e.getExpenseType()
+                        .getExpenseTypeName(),
+                e.getAmount(),
+                e.getProofUrl(),
+                e.getExpenseDate(),
+                e.getApprovalStatus()
+                        .getApprovalStatusName(),
+                remark
+        );
+    }
 }
-public List<ExpenseResponseDTO> getMyExpenses() {
-
-    Authentication auth =
-            SecurityContextHolder.getContext().getAuthentication();
-
-    String email = auth.getName();
-
-    Employee employee =
-            employeeRepository.findByEmail(email)
-                    .orElseThrow();
-
-    return expenseRepository
-            .findByEmployee_EmployeeId(
-                    employee.getEmployeeId())
-            .stream()
-            .map(this::mapToDTO)
-            .toList();
-}
-private ExpenseResponseDTO mapToDTO(
-        ExpensesDetail e) {
-
-    return new ExpenseResponseDTO(
-            e.getExpenseId(),
-            e.getTravel().getDestination(),
-            e.getExpenseType().getExpenseTypeName(),
-            e.getAmount(),
-            e.getProofUrl(),
-            e.getExpenseDate()
-    );
-}
-
-
 
 
 @RestController
@@ -249,29 +287,56 @@ public class ExpenseController {
 
     @Autowired
     private ExpenseService expenseService;
-@PreAuthorize("hasAuthority('ROLE_EMPLOYEE')")
-@PostMapping(
-        value = "/create",
-        consumes = MediaType.MULTIPART_FORM_DATA_VALUE
-)
-public ResponseEntity<ExpenseResponseDTO>
-createExpense(
-        @RequestPart("data")
-        ExpenseRequestDTO request,
 
-        @RequestPart("file")
-        MultipartFile file
-) throws Exception {
+    @PreAuthorize("hasAuthority('ROLE_EMPLOYEE')")
+    @PostMapping(value="/create",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> create(
+            @RequestPart("data")
+            ExpenseRequestDTO request,
+            @RequestPart("file")
+            MultipartFile file) throws Exception {
 
-    return ResponseEntity.ok(
-            expenseService.createExpense(
-                    request, file));
+        return ResponseEntity.ok(
+                expenseService.createExpense(request,file));
+    }
+
+    @PreAuthorize("hasAuthority('ROLE_EMPLOYEE')")
+    @PutMapping("/{id}/submit")
+    public ResponseEntity<?> submit(
+            @PathVariable Integer id){
+
+        expenseService.submitExpense(id);
+        return ResponseEntity.ok("Submitted");
+    }
+
+
+    @PreAuthorize("hasRole('HR')")
+    @PutMapping("/{id}/approve")
+    public ResponseEntity<?> approve(
+            @PathVariable Integer id,
+            @RequestParam String remark){
+
+        expenseService.approveExpense(id,remark);
+        return ResponseEntity.ok("Approved");
+    }
+
+    @PreAuthorize("hasRole('HR')")
+    @PutMapping("/{id}/reject")
+    public ResponseEntity<?> reject(
+            @PathVariable Integer id,
+            @RequestParam String remark){
+
+        expenseService.rejectExpense(id,remark);
+        return ResponseEntity.ok("Rejected");
+    }
+
+    @PreAuthorize("hasAuthority('ROLE_EMPLOYEE')")
+    @GetMapping("/my")
+    public ResponseEntity<?> myExpenses(){
+        return ResponseEntity.ok(
+                expenseService.getMyExpenses());
+    }
 }
-@PreAuthorize("hasAuthority('ROLE_EMPLOYEE')")
-@GetMapping("/my")
-public ResponseEntity<List<ExpenseResponseDTO>>
-getMyExpenses() {
 
-    return ResponseEntity.ok(
-            expenseService.getMyExpenses());
-}
+
