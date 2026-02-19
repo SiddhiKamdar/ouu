@@ -1,242 +1,113 @@
-import axiosInstance from "./axiosInstance";
+package com.example.backend.repository;
 
-export interface Expense {
-  expenseId: number;
-  destination: string;
-  expenseType: string;
-  amount: number;
-  proofUrl: string;
-  expenseDate: string;
-  status: string;
-  hrRemark?: string;
-}
+import com.example.backend.entity.ExpensesDetail;
+import org.springframework.data.jpa.repository.JpaRepository;
 
-export interface ExpenseRequest {
-  travelId: number;
-  expenseTypeId: number;
-  amount: number;
-  comment: string;
-  expenseDate: string;
+import java.util.List;
+
+public interface ExpenseRepository
+        extends JpaRepository<ExpensesDetail, Integer> {
+
+    List<ExpensesDetail>
+    findByEmployee_EmployeeId(int employeeId);
+
+    List<ExpensesDetail>
+    findByTravel_TravelId(int travelId);
 }
 
 
-// ================= CREATE =================
-export const createExpense = async (
-  data: ExpenseRequest,
-  file: File
-) => {
+public List<ExpenseResponseDTO>
+getExpensesByTravel(Integer travelId) {
 
-  const formData = new FormData();
+    Employee employee = getLoggedInEmployee();
 
-  formData.append(
-    "data",
-    new Blob([JSON.stringify(data)], {
-      type: "application/json"
-    })
-  );
+    return expenseRepository
+            .findByTravel_TravelId(travelId)
+            .stream()
+            .filter(e ->
+                    e.getEmployee()
+                     .getEmployeeId()
+                     == employee.getEmployeeId())
+            .map(this::mapToDTO)
+            .toList();
+}
 
-  formData.append("file", file);
+@PreAuthorize("hasAuthority('ROLE_EMPLOYEE')")
+@GetMapping("/travel/{travelId}")
+public ResponseEntity<List<ExpenseResponseDTO>>
+getExpensesByTravel(
+        @PathVariable Integer travelId){
 
-  await axiosInstance.post(
-    "/api/expenses/create",
-    formData,
-    {
-      headers: {
-        "Content-Type": "multipart/form-data"
-      }
-    }
-  );
-};
+    return ResponseEntity.ok(
+            expenseService
+                    .getExpensesByTravel(travelId));
+}
 
 
-// ================= MY EXPENSES =================
-export const getMyExpenses = async (): Promise<Expense[]> => {
+
+export const getExpensesByTravel =
+async (travelId: string) => {
 
   const res =
-    await axiosInstance.get("/api/expenses/my");
+    await axiosInstance.get(
+      `/api/expenses/travel/${travelId}`
+    );
 
   return res.data;
 };
 
 
-// ================= SUBMIT =================
-export const submitExpense = async (
-  expenseId: number
-) => {
+import React,
+{ useEffect, useState } from "react";
 
-  await axiosInstance.put(
-    `/api/expenses/${expenseId}/submit`
-  );
-};
-
-
-// ================= APPROVE =================
-export const approveExpense = async (
-  expenseId: number,
-  remark: string
-) => {
-
-  await axiosInstance.put(
-    `/api/expenses/${expenseId}/approve`,
-    null,
-    { params: { remark } }
-  );
-};
-
-
-// ================= REJECT =================
-export const rejectExpense = async (
-  expenseId: number,
-  remark: string
-) => {
-
-  await axiosInstance.put(
-    `/api/expenses/${expenseId}/reject`,
-    null,
-    { params: { remark } }
-  );
-};
-
-import React, { useEffect, useState } from "react";
 import {
-  Expense,
-  getMyExpenses,
-  submitExpense
-} from "../services/expenseService";
+  getExpensesByTravel,
+  submitExpense,
+  Expense
+} from "../../services/expenseService";
 
-const ExpenseMy: React.FC = () => {
+interface Props {
+  travelId: string;
+}
+
+const TravelExpenses: React.FC<Props>
+= ({ travelId }) => {
 
   const [expenses, setExpenses] =
     useState<Expense[]>([]);
 
   useEffect(() => {
     loadExpenses();
-  }, []);
+  }, [travelId]);
 
   const loadExpenses = async () => {
-    const data = await getMyExpenses();
+    const data =
+      await getExpensesByTravel(travelId);
     setExpenses(data);
   };
 
-  const handleSubmit = async (
-    id: number
-  ) => {
+  const handleSubmit =
+  async (id:number) => {
+
     await submitExpense(id);
     loadExpenses();
   };
 
   return (
-    <div className="card p-4">
 
-      <h4>My Expenses</h4>
+    <div className="mt-4">
 
-      <table className="table mt-3">
-        <thead>
-          <tr>
-            <th>Travel</th>
-            <th>Type</th>
-            <th>Amount</th>
-            <th>Status</th>
-            <th>Proof</th>
-            <th>HR Remark</th>
-            <th>Action</th>
-          </tr>
-        </thead>
+      <h5>Expenses</h5>
 
-        <tbody>
-
-          {expenses.map(e => (
-            <tr key={e.expenseId}>
-
-              <td>{e.destination}</td>
-              <td>{e.expenseType}</td>
-              <td>₹ {e.amount}</td>
-              <td>{e.status}</td>
-
-              <td>
-                <a
-                  href={`http://localhost:8080/${e.proofUrl}`}
-                  target="_blank"
-                >
-                  View
-                </a>
-              </td>
-
-              <td>{e.hrRemark ?? "-"}</td>
-
-              <td>
-                {e.status === "DRAFT" && (
-                  <button
-                    className="btn btn-success btn-sm"
-                    onClick={() =>
-                      handleSubmit(e.expenseId)
-                    }
-                  >
-                    Submit
-                  </button>
-                )}
-              </td>
-
-            </tr>
-          ))}
-
-        </tbody>
-      </table>
-
-    </div>
-  );
-};
-
-export default ExpenseMy;
-
-import React, { useEffect, useState } from "react";
-import {
-  Expense,
-  getMyExpenses,
-  approveExpense,
-  rejectExpense
-} from "../services/expenseService";
-
-const ExpenseApproval: React.FC = () => {
-
-  const [expenses, setExpenses] =
-    useState<Expense[]>([]);
-
-  useEffect(() => {
-    load();
-  }, []);
-
-  const load = async () => {
-    const data = await getMyExpenses();
-    setExpenses(data);
-  };
-
-  const approve = async (id: number) => {
-    await approveExpense(id, "Approved");
-    load();
-  };
-
-  const reject = async (id: number) => {
-
-    const remark =
-      prompt("Enter rejection reason");
-
-    if (!remark) return;
-
-    await rejectExpense(id, remark);
-    load();
-  };
-
-  return (
-    <div className="card p-4">
-
-      <h4>HR Expense Approval</h4>
+      {expenses.length === 0 &&
+        <p>No expenses added.</p>
+      }
 
       <table className="table">
 
         <thead>
           <tr>
-            <th>Travel</th>
+            <th>Type</th>
             <th>Amount</th>
             <th>Status</th>
             <th>Proof</th>
@@ -246,56 +117,53 @@ const ExpenseApproval: React.FC = () => {
 
         <tbody>
 
-          {expenses.map(e => (
-            <tr key={e.expenseId}>
+        {expenses.map(e => (
 
-              <td>{e.destination}</td>
-              <td>{e.amount}</td>
-              <td>{e.status}</td>
+          <tr key={e.expenseId}>
 
-              <td>
-                <a
-                  href={`http://localhost:8080/${e.proofUrl}`}
-                  target="_blank"
+            <td>{e.expenseType}</td>
+            <td>₹ {e.amount}</td>
+            <td>{e.status}</td>
+
+            <td>
+              <a
+                href={`http://localhost:8080/${e.proofUrl}`}
+                target="_blank"
+              >
+                View
+              </a>
+            </td>
+
+            <td>
+              {e.status === "DRAFT" && (
+                <button
+                  className="btn btn-success btn-sm"
+                  onClick={() =>
+                    handleSubmit(e.expenseId)}
                 >
-                  View
-                </a>
-              </td>
+                  Submit
+                </button>
+              )}
+            </td>
 
-              <td>
-
-                {e.status === "SUBMITTED" && (
-                  <>
-                    <button
-                      className="btn btn-success btn-sm me-2"
-                      onClick={() =>
-                        approve(e.expenseId)}
-                    >
-                      Approve
-                    </button>
-
-                    <button
-                      className="btn btn-danger btn-sm"
-                      onClick={() =>
-                        reject(e.expenseId)}
-                    >
-                      Reject
-                    </button>
-                  </>
-                )}
-
-              </td>
-
-            </tr>
-          ))}
+          </tr>
+        ))}
 
         </tbody>
+
       </table>
 
     </div>
   );
 };
 
-export default ExpenseApproval;
+export default TravelExpenses;
 
+import TravelExpenses
+from "../components/travel/TravelExpenses";
 
+<hr />
+
+<TravelExpenses
+   travelId={travelId!}
+/>
