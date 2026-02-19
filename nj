@@ -1,150 +1,277 @@
-Now we move from “file stored” → “file served” properly.
+package com.example.backend.entity;
 
-Right now:
+import jakarta.persistence.*;
+import java.math.BigDecimal;
+import java.util.Date;
 
-You saved file inside:
+@Entity
+@Table(name = "expenses_detail")
+public class ExpensesDetail {
 
-uploads/travel-documents/
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "expense_id")
+    private int expenseId;
 
+    @ManyToOne
+    @JoinColumn(name = "travel_id", nullable = false)
+    private Travel travel;
 
-DB stores:
+    @ManyToOne
+    @JoinColumn(name = "expense_type_id", nullable = false)
+    private ExpensesType expenseType;
 
-uploads/travel-documents/file.pdf
+    @ManyToOne
+    @JoinColumn(name = "employee_id")
+    private Employee employee;
 
+    @Column(name = "amount", nullable = false)
+    private BigDecimal amount;
 
-Frontend only shows filename
+    @Column(name = "comment")
+    private String comment;
 
-But browser cannot access it directly
+    @Column(name = "proof_url", nullable = false)
+    private String proofUrl;
 
-Because Spring Boot is not serving that folder as static resource.
+    @Column(name = "expense_date")
+    private Date expenseDate;
 
-🎯 Goal
+    @Column(name = "upload_date")
+    private Date uploadDate;
 
-When clicking document:
+    @Column(name = "is_deleted")
+    private Boolean isDeleted = false;
 
-http://localhost:8080/uploads/travel-documents/file.pdf
-
-
-Browser should open the PDF.
-
-✅ STEP 1 — Expose Upload Folder As Static Resource
-
-In your backend, create this config class:
-
-📁 config/FileUploadConfig.java
-
-package com.example.backend.config;
-
-import org.springframework.context.annotation.Configuration;
-import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
-import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
-
-import org.springframework.beans.factory.annotation.Value;
-
-@Configuration
-public class FileUploadConfig implements WebMvcConfigurer {
-
-    @Value("${file.upload-dir}")
-    private String uploadDir;
-
-    @Override
-    public void addResourceHandlers(ResourceHandlerRegistry registry) {
-
-        registry.addResourceHandler("/uploads/**")
-                .addResourceLocations("file:" + uploadDir);
-    }
+    // getters setters
 }
 
-🧠 What This Does
 
-Maps:
+@Entity
+@Table(name = "expense_type")
+public class ExpensesType {
 
-http://localhost:8080/uploads/**
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "expense_type_id")
+    private int expenseTypeId;
 
+    @Column(name = "expense_type_name")
+    private String expenseTypeName;
 
-To your physical folder:
-
-uploads/travel-documents/
-
-
-Now Spring serves files directly.
-
-✅ STEP 2 — Make Sure DB Stores RELATIVE Path
-
-You should be storing:
-
-document.setDocumentUrl("uploads/travel-documents/" + fileName);
+    // getters setters
+}
 
 
-NOT full system path.
+package com.example.backend.repository;
 
-✅ STEP 3 — Update Frontend To Render PDF
+import com.example.backend.entity.ExpensesDetail;
+import org.springframework.data.jpa.repository.JpaRepository;
 
-In TravelDetail.tsx change document list:
+import java.util.List;
 
-Replace:
+public interface ExpenseRepository
+        extends JpaRepository<ExpensesDetail, Integer> {
 
-<li key={doc.id}>
-  {doc.documentUrl.split(/[/\\]/).pop()}
-</li>
-
-
-With:
-
-<li key={doc.id}>
-  <a
-    href={`http://localhost:8080/${doc.documentUrl}`}
-    target="_blank"
-    rel="noopener noreferrer"
-  >
-    {doc.documentUrl.split(/[/\\]/).pop()}
-  </a>
-</li>
+    List<ExpensesDetail> findByEmployee_EmployeeId(int employeeId);
+}
 
 
-Now clicking opens PDF in new tab.
+package com.example.backend.repository;
 
-🚀 RESULT
+import com.example.backend.entity.ExpensesType;
+import org.springframework.data.jpa.repository.JpaRepository;
 
-Now:
+public interface ExpenseTypeRepository
+        extends JpaRepository<ExpensesType, Integer> {
+}
 
-Click document
+package com.example.backend.dto.request;
 
-PDF opens in browser
+import java.math.BigDecimal;
+import java.util.Date;
 
-No backend controller needed
+public class ExpenseRequestDTO {
 
-Clean architecture
+    private int travelId;
+    private int expenseTypeId;
+    private BigDecimal amount;
+    private String comment;
+    private Date expenseDate;
 
-🎯 OPTIONAL — Show PDF Inline (Advanced)
-
-If you want to embed inside page:
-
-<iframe
-  src={`http://localhost:8080/${doc.documentUrl}`}
-  width="100%"
-  height="500px"
-/>
-
-
-But link is cleaner for now.
-
-🔥 After Doing This
-
-Restart backend
-
-Refresh frontend
-
-Click document
-
-PDF should open.
-
-registry.addResourceHandler("/uploads/**")
-        .addResourceLocations("file:" + uploadDir);
+    // getters setters
+}
 
 
-file.upload-dir=${user.dir}/uploads/travel-documents/
+package com.example.backend.dto.response;
+
+import java.math.BigDecimal;
+import java.util.Date;
+
+public class ExpenseResponseDTO {
+
+    private int expenseId;
+    private String travelDestination;
+    private String expenseType;
+    private BigDecimal amount;
+    private String proofUrl;
+    private Date expenseDate;
+
+    public ExpenseResponseDTO(
+            int expenseId,
+            String travelDestination,
+            String expenseType,
+            BigDecimal amount,
+            String proofUrl,
+            Date expenseDate) {
+
+        this.expenseId = expenseId;
+        this.travelDestination = travelDestination;
+        this.expenseType = expenseType;
+        this.amount = amount;
+        this.proofUrl = proofUrl;
+        this.expenseDate = expenseDate;
+    }
+
+    // getters
+}
 
 
-.requestMatchers("/uploads/**").permitAll()
+@Service
+public class ExpenseService {
 
+    @Autowired
+    private ExpenseRepository expenseRepository;
+
+    @Autowired
+    private TravelModuleRepository travelRepository;
+
+    @Autowired
+    private ExpenseTypeRepository expenseTypeRepository;
+
+    @Autowired
+    private EmployeeRepository employeeRepository;
+public ExpenseResponseDTO createExpense(
+        ExpenseRequestDTO request,
+        MultipartFile proofFile) throws Exception {
+
+    Authentication auth =
+            SecurityContextHolder.getContext().getAuthentication();
+
+    String email = auth.getName();
+
+    Employee employee =
+            employeeRepository.findByEmail(email)
+                    .orElseThrow();
+
+    Travel travel =
+            travelRepository.findById(
+                    (long) request.getTravelId())
+                    .orElseThrow();
+
+    ExpensesType type =
+            expenseTypeRepository.findById(
+                    request.getExpenseTypeId())
+                    .orElseThrow();
+
+    // ===== SAVE FILE =====
+    String uploadDir =
+            System.getProperty("user.dir")
+                    + "/uploads/expense-proofs/";
+
+    File dir = new File(uploadDir);
+    if (!dir.exists()) dir.mkdirs();
+
+    String fileName =
+            System.currentTimeMillis()
+                    + "_" +
+                    proofFile.getOriginalFilename();
+
+    proofFile.transferTo(
+            new File(uploadDir + fileName));
+
+    // ===== ENTITY =====
+    ExpensesDetail expense = new ExpensesDetail();
+
+    expense.setEmployee(employee);
+    expense.setTravel(travel);
+    expense.setExpenseType(type);
+    expense.setAmount(request.getAmount());
+    expense.setComment(request.getComment());
+    expense.setExpenseDate(request.getExpenseDate());
+    expense.setUploadDate(new Date());
+    expense.setProofUrl(
+            "uploads/expense-proofs/" + fileName
+    );
+
+    ExpensesDetail saved =
+            expenseRepository.save(expense);
+
+    return mapToDTO(saved);
+}
+public List<ExpenseResponseDTO> getMyExpenses() {
+
+    Authentication auth =
+            SecurityContextHolder.getContext().getAuthentication();
+
+    String email = auth.getName();
+
+    Employee employee =
+            employeeRepository.findByEmail(email)
+                    .orElseThrow();
+
+    return expenseRepository
+            .findByEmployee_EmployeeId(
+                    employee.getEmployeeId())
+            .stream()
+            .map(this::mapToDTO)
+            .toList();
+}
+private ExpenseResponseDTO mapToDTO(
+        ExpensesDetail e) {
+
+    return new ExpenseResponseDTO(
+            e.getExpenseId(),
+            e.getTravel().getDestination(),
+            e.getExpenseType().getExpenseTypeName(),
+            e.getAmount(),
+            e.getProofUrl(),
+            e.getExpenseDate()
+    );
+}
+
+
+
+
+@RestController
+@RequestMapping("/api/expenses")
+public class ExpenseController {
+
+    @Autowired
+    private ExpenseService expenseService;
+@PreAuthorize("hasAuthority('ROLE_EMPLOYEE')")
+@PostMapping(
+        value = "/create",
+        consumes = MediaType.MULTIPART_FORM_DATA_VALUE
+)
+public ResponseEntity<ExpenseResponseDTO>
+createExpense(
+        @RequestPart("data")
+        ExpenseRequestDTO request,
+
+        @RequestPart("file")
+        MultipartFile file
+) throws Exception {
+
+    return ResponseEntity.ok(
+            expenseService.createExpense(
+                    request, file));
+}
+@PreAuthorize("hasAuthority('ROLE_EMPLOYEE')")
+@GetMapping("/my")
+public ResponseEntity<List<ExpenseResponseDTO>>
+getMyExpenses() {
+
+    return ResponseEntity.ok(
+            expenseService.getMyExpenses());
+}
