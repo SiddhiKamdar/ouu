@@ -1,101 +1,193 @@
-package com.example.backend.repository;
+import React, { useEffect, useState } from "react";
+import { useParams } from "react-router-dom";
 
-import com.example.backend.entity.ExpensesDetail;
-import org.springframework.data.jpa.repository.JpaRepository;
+import {
+  getTravelById,
+  type Travel
+} from "../services/travelService";
 
-import java.util.List;
-
-public interface ExpenseRepository
-        extends JpaRepository<ExpensesDetail, Integer> {
-
-    List<ExpensesDetail>
-    findByEmployee_EmployeeId(int employeeId);
-
-    List<ExpensesDetail>
-    findByTravel_TravelId(int travelId);
-}
-
-
-public List<ExpenseResponseDTO>
-getExpensesByTravel(Integer travelId) {
-
-    Employee employee = getLoggedInEmployee();
-
-    return expenseRepository
-            .findByTravel_TravelId(travelId)
-            .stream()
-            .filter(e ->
-                    e.getEmployee()
-                     .getEmployeeId()
-                     == employee.getEmployeeId())
-            .map(this::mapToDTO)
-            .toList();
-}
-
-@PreAuthorize("hasAuthority('ROLE_EMPLOYEE')")
-@GetMapping("/travel/{travelId}")
-public ResponseEntity<List<ExpenseResponseDTO>>
-getExpensesByTravel(
-        @PathVariable Integer travelId){
-
-    return ResponseEntity.ok(
-            expenseService
-                    .getExpensesByTravel(travelId));
-}
-
-
-
-export const getExpensesByTravel =
-async (travelId: string) => {
-
-  const res =
-    await axiosInstance.get(
-      `/api/expenses/travel/${travelId}`
-    );
-
-  return res.data;
-};
-
-
-import React,
-{ useEffect, useState } from "react";
+import {
+  getDocumentsByTravel,
+  uploadDocument,
+  type TravelDocument
+} from "../services/documentService";
 
 import {
   getExpensesByTravel,
   submitExpense,
-  Expense
-} from "../../services/expenseService";
+  type Expense
+} from "../services/expenseService";
 
-interface Props {
-  travelId: string;
-}
 
-const TravelExpenses: React.FC<Props>
-= ({ travelId }) => {
+const TravelDetail: React.FC = () => {
+
+  const { travelId } = useParams();
+
+  const user =
+    JSON.parse(localStorage.getItem("user") || "{}");
+
+  const [travel, setTravel] =
+    useState<Travel | null>(null);
+
+  const [documents, setDocuments] =
+    useState<TravelDocument[]>([]);
 
   const [expenses, setExpenses] =
     useState<Expense[]>([]);
 
+  const [selectedFile, setSelectedFile] =
+    useState<File | null>(null);
+
+
+  // ================= LOAD =================
   useEffect(() => {
-    loadExpenses();
+
+    if (travelId) {
+      loadTravel();
+      loadDocuments();
+      loadExpenses();
+    }
+
   }, [travelId]);
+
+
+  const loadTravel = async () => {
+    const data =
+      await getTravelById(travelId!);
+    setTravel(data);
+  };
+
+  const loadDocuments = async () => {
+    const data =
+      await getDocumentsByTravel(travelId!);
+    setDocuments(data);
+  };
 
   const loadExpenses = async () => {
     const data =
-      await getExpensesByTravel(travelId);
+      await getExpensesByTravel(travelId!);
     setExpenses(data);
   };
 
-  const handleSubmit =
-  async (id:number) => {
 
-    await submitExpense(id);
+  // ================= DOCUMENT UPLOAD =================
+  const handleUpload = async () => {
+
+    if (!selectedFile) return;
+
+    await uploadDocument(
+      travelId!,
+      selectedFile,
+      user.employeeId,
+      user.role === "EMPLOYEE"
+        ? user.employeeId
+        : undefined
+    );
+
+    setSelectedFile(null);
+    loadDocuments();
+  };
+
+
+  // ================= SUBMIT EXPENSE =================
+  const handleSubmitExpense =
+  async (expenseId:number) => {
+
+    await submitExpense(expenseId);
     loadExpenses();
   };
 
-  return (
 
-    <div className="mt-4">
+  if (!travel)
+    return <div>Loading...</div>;
+
+
+  return (
+    <div className="card p-4 shadow-sm">
+
+      {/* ================= TRAVEL INFO ================= */}
+
+      <h4>Travel Detail</h4>
+
+      <p>
+        <strong>Destination:</strong>
+        {" "} {travel.destination}
+      </p>
+
+      <p>
+        <strong>Employees:</strong>
+        {" "}
+        {travel.employeeNames?.join(", ")}
+      </p>
+
+      <p>
+        <strong>Departure:</strong>{" "}
+        {new Date(
+          travel.departDate
+        ).toLocaleDateString()}
+      </p>
+
+      <p>
+        <strong>Return:</strong>{" "}
+        {new Date(
+          travel.returnDate
+        ).toLocaleDateString()}
+      </p>
+
+
+      {/* ================= DOCUMENTS ================= */}
+
+      <hr />
+
+      <h5>Documents</h5>
+
+      {documents.length === 0 &&
+        <p>No documents uploaded yet.</p>
+      }
+
+      <ul>
+        {documents.map(doc => (
+
+          <li key={doc.id}>
+            <a
+              href={`http://localhost:8080/${doc.documentUrl}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {doc.documentUrl
+                .split(/[/\\]/)
+                .pop()}
+            </a>
+          </li>
+
+        ))}
+      </ul>
+
+
+      <h6 className="mt-3">
+        Upload Document
+      </h6>
+
+      <input
+        type="file"
+        onChange={(e) =>
+          setSelectedFile(
+            e.target.files?.[0] || null
+          )
+        }
+      />
+
+      <button
+        className="btn btn-success mt-2"
+        onClick={handleUpload}
+      >
+        Upload
+      </button>
+
+
+      {/* ================= EXPENSES ================= */}
+
+      <hr />
 
       <h5>Expenses</h5>
 
@@ -111,43 +203,58 @@ const TravelExpenses: React.FC<Props>
             <th>Amount</th>
             <th>Status</th>
             <th>Proof</th>
+            <th>HR Remark</th>
             <th>Action</th>
           </tr>
         </thead>
 
         <tbody>
 
-        {expenses.map(e => (
+          {expenses.map(e => (
 
-          <tr key={e.expenseId}>
+            <tr key={e.expenseId}>
 
-            <td>{e.expenseType}</td>
-            <td>₹ {e.amount}</td>
-            <td>{e.status}</td>
+              <td>{e.expenseType}</td>
 
-            <td>
-              <a
-                href={`http://localhost:8080/${e.proofUrl}`}
-                target="_blank"
-              >
-                View
-              </a>
-            </td>
+              <td>
+                ₹ {e.amount}
+              </td>
 
-            <td>
-              {e.status === "DRAFT" && (
-                <button
-                  className="btn btn-success btn-sm"
-                  onClick={() =>
-                    handleSubmit(e.expenseId)}
+              <td>{e.status}</td>
+
+              <td>
+                <a
+                  href={`http://localhost:8080/${e.proofUrl}`}
+                  target="_blank"
                 >
-                  Submit
-                </button>
-              )}
-            </td>
+                  View
+                </a>
+              </td>
 
-          </tr>
-        ))}
+              <td>
+                {e.hrRemark ?? "-"}
+              </td>
+
+              <td>
+
+                {e.status === "DRAFT" && (
+                  <button
+                    className="btn btn-success btn-sm"
+                    onClick={() =>
+                      handleSubmitExpense(
+                        e.expenseId
+                      )
+                    }
+                  >
+                    Submit
+                  </button>
+                )}
+
+              </td>
+
+            </tr>
+
+          ))}
 
         </tbody>
 
@@ -157,13 +264,4 @@ const TravelExpenses: React.FC<Props>
   );
 };
 
-export default TravelExpenses;
-
-import TravelExpenses
-from "../components/travel/TravelExpenses";
-
-<hr />
-
-<TravelExpenses
-   travelId={travelId!}
-/>
+export default TravelDetail;
