@@ -1,5 +1,126 @@
+<Route
+ path="/app/travel/:travelId/add-expense"
+ element={<AddExpense />}
+/>
+
+
+import React,
+{ useState } from "react";
+
+import { useNavigate,
+useParams } from "react-router-dom";
+
+import {
+  createExpense
+} from "../services/expenseService";
+
+
+const AddExpense:React.FC=()=>{
+
+const navigate=useNavigate();
+const {travelId}=useParams();
+
+const[amount,setAmount]=
+useState("");
+
+const[comment,setComment]=
+useState("");
+
+const[expenseDate,
+setExpenseDate]=useState("");
+
+const[file,setFile]=
+useState<File|null>(null);
+
+
+const handleSubmit=
+async(e:React.FormEvent)=>{
+
+e.preventDefault();
+
+if(!file)return;
+
+await createExpense(
+{
+ travelId:Number(travelId),
+ expenseTypeId:1,
+ amount:Number(amount),
+ comment,
+ expenseDate
+},
+file
+);
+
+navigate(
+`/app/travel/${travelId}`
+);
+
+};
+
+
+return(
+
+<div
+className="card p-4"
+style={{maxWidth:"600px"}}>
+
+<h4>Add Expense</h4>
+
+<form onSubmit={handleSubmit}>
+
+<input
+className="form-control mb-3"
+placeholder="Amount"
+value={amount}
+onChange={(e)=>
+setAmount(e.target.value)}
+required
+/>
+
+<input
+type="date"
+className="form-control mb-3"
+value={expenseDate}
+onChange={(e)=>
+setExpenseDate(e.target.value)}
+required
+/>
+
+<textarea
+className="form-control mb-3"
+placeholder="Comment"
+value={comment}
+onChange={(e)=>
+setComment(e.target.value)}
+/>
+
+<input
+type="file"
+className="form-control mb-3"
+onChange={(e)=>
+setFile(
+e.target.files?.[0]||null)}
+required
+/>
+
+<button
+className="btn btn-success w-100">
+Save Expense
+</button>
+
+</form>
+
+</div>
+);
+};
+
+export default AddExpense;
+
+
+
+
 import React, { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 
 import {
   getTravelById,
@@ -22,6 +143,7 @@ import {
 const TravelDetail: React.FC = () => {
 
   const { travelId } = useParams();
+  const navigate = useNavigate();
 
   const user =
     JSON.parse(localStorage.getItem("user") || "{}");
@@ -41,13 +163,11 @@ const TravelDetail: React.FC = () => {
 
   // ================= LOAD =================
   useEffect(() => {
-
     if (travelId) {
       loadTravel();
       loadDocuments();
       loadExpenses();
     }
-
   }, [travelId]);
 
 
@@ -91,11 +211,11 @@ const TravelDetail: React.FC = () => {
 
   // ================= SUBMIT EXPENSE =================
   const handleSubmitExpense =
-  async (expenseId:number) => {
+    async (expenseId: number) => {
 
-    await submitExpense(expenseId);
-    loadExpenses();
-  };
+      await submitExpense(expenseId);
+      loadExpenses();
+    };
 
 
   if (!travel)
@@ -110,13 +230,12 @@ const TravelDetail: React.FC = () => {
       <h4>Travel Detail</h4>
 
       <p>
-        <strong>Destination:</strong>
-        {" "} {travel.destination}
+        <strong>Destination:</strong>{" "}
+        {travel.destination}
       </p>
 
       <p>
-        <strong>Employees:</strong>
-        {" "}
+        <strong>Employees:</strong>{" "}
         {travel.employeeNames?.join(", ")}
       </p>
 
@@ -147,7 +266,6 @@ const TravelDetail: React.FC = () => {
 
       <ul>
         {documents.map(doc => (
-
           <li key={doc.id}>
             <a
               href={`http://localhost:8080/${doc.documentUrl}`}
@@ -159,10 +277,8 @@ const TravelDetail: React.FC = () => {
                 .pop()}
             </a>
           </li>
-
         ))}
       </ul>
-
 
       <h6 className="mt-3">
         Upload Document
@@ -189,13 +305,29 @@ const TravelDetail: React.FC = () => {
 
       <hr />
 
-      <h5>Expenses</h5>
+      <div className="d-flex justify-content-between align-items-center">
+        <h5>Expenses</h5>
+
+        <button
+          className="btn btn-primary"
+          onClick={() =>
+            navigate(
+              `/app/travel/${travelId}/add-expense`
+            )
+          }
+        >
+          + Add Expense
+        </button>
+      </div>
+
 
       {expenses.length === 0 &&
-        <p>No expenses added.</p>
+        <p className="mt-2">
+          No expenses added yet.
+        </p>
       }
 
-      <table className="table">
+      <table className="table mt-3">
 
         <thead>
           <tr>
@@ -216,9 +348,7 @@ const TravelDetail: React.FC = () => {
 
               <td>{e.expenseType}</td>
 
-              <td>
-                ₹ {e.amount}
-              </td>
+              <td>₹ {e.amount}</td>
 
               <td>{e.status}</td>
 
@@ -236,7 +366,6 @@ const TravelDetail: React.FC = () => {
               </td>
 
               <td>
-
                 {e.status === "DRAFT" && (
                   <button
                     className="btn btn-success btn-sm"
@@ -249,7 +378,6 @@ const TravelDetail: React.FC = () => {
                     Submit
                   </button>
                 )}
-
               </td>
 
             </tr>
