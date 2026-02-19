@@ -1,83 +1,301 @@
-package com.example.backend.entity;
+import axiosInstance from "./axiosInstance";
 
-import jakarta.persistence.*;
-import java.util.Date;
-import java.util.List;
-
-@Entity
-@Table(name = "travel_details")
-public class Travel {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "travel_id")
-    private int travelId;
-
-    @Column(name = "destination")
-    private String destination;
-
-    @Column(name = "depart_date")
-    private Date departDate;
-
-    @Column(name = "return_date")
-    private Date returnDate;
-
-    @ManyToOne
-    @JoinColumn(name = "scheduler_id")
-    private Employee scheduler;
-
-
-    // ✅ ADD THIS RELATION
-    @OneToMany(mappedBy = "travel")
-    private List<TravelEmployee> travelEmployees;
-
-
-    public int getTravelId() {
-        return travelId;
-    }
-
-    public void setTravelId(int travelId) {
-        this.travelId = travelId;
-    }
-
-    public String getDestination() {
-        return destination;
-    }
-
-    public void setDestination(String destination) {
-        this.destination = destination;
-    }
-
-    public Date getDepartDate() {
-        return departDate;
-    }
-
-    public void setDepartDate(Date departDate) {
-        this.departDate = departDate;
-    }
-
-    public Date getReturnDate() {
-        return returnDate;
-    }
-
-    public void setReturnDate(Date returnDate) {
-        this.returnDate = returnDate;
-    }
-
-    public Employee getScheduler() {
-        return scheduler;
-    }
-
-    public void setScheduler(Employee scheduler) {
-        this.scheduler = scheduler;
-    }
-
-    public List<TravelEmployee> getTravelEmployees() {
-        return travelEmployees;
-    }
-
-    public void setTravelEmployees(
-            List<TravelEmployee> travelEmployees) {
-        this.travelEmployees = travelEmployees;
-    }
+export interface Expense {
+  expenseId: number;
+  destination: string;
+  expenseType: string;
+  amount: number;
+  proofUrl: string;
+  expenseDate: string;
+  status: string;
+  hrRemark?: string;
 }
+
+export interface ExpenseRequest {
+  travelId: number;
+  expenseTypeId: number;
+  amount: number;
+  comment: string;
+  expenseDate: string;
+}
+
+
+// ================= CREATE =================
+export const createExpense = async (
+  data: ExpenseRequest,
+  file: File
+) => {
+
+  const formData = new FormData();
+
+  formData.append(
+    "data",
+    new Blob([JSON.stringify(data)], {
+      type: "application/json"
+    })
+  );
+
+  formData.append("file", file);
+
+  await axiosInstance.post(
+    "/api/expenses/create",
+    formData,
+    {
+      headers: {
+        "Content-Type": "multipart/form-data"
+      }
+    }
+  );
+};
+
+
+// ================= MY EXPENSES =================
+export const getMyExpenses = async (): Promise<Expense[]> => {
+
+  const res =
+    await axiosInstance.get("/api/expenses/my");
+
+  return res.data;
+};
+
+
+// ================= SUBMIT =================
+export const submitExpense = async (
+  expenseId: number
+) => {
+
+  await axiosInstance.put(
+    `/api/expenses/${expenseId}/submit`
+  );
+};
+
+
+// ================= APPROVE =================
+export const approveExpense = async (
+  expenseId: number,
+  remark: string
+) => {
+
+  await axiosInstance.put(
+    `/api/expenses/${expenseId}/approve`,
+    null,
+    { params: { remark } }
+  );
+};
+
+
+// ================= REJECT =================
+export const rejectExpense = async (
+  expenseId: number,
+  remark: string
+) => {
+
+  await axiosInstance.put(
+    `/api/expenses/${expenseId}/reject`,
+    null,
+    { params: { remark } }
+  );
+};
+
+import React, { useEffect, useState } from "react";
+import {
+  Expense,
+  getMyExpenses,
+  submitExpense
+} from "../services/expenseService";
+
+const ExpenseMy: React.FC = () => {
+
+  const [expenses, setExpenses] =
+    useState<Expense[]>([]);
+
+  useEffect(() => {
+    loadExpenses();
+  }, []);
+
+  const loadExpenses = async () => {
+    const data = await getMyExpenses();
+    setExpenses(data);
+  };
+
+  const handleSubmit = async (
+    id: number
+  ) => {
+    await submitExpense(id);
+    loadExpenses();
+  };
+
+  return (
+    <div className="card p-4">
+
+      <h4>My Expenses</h4>
+
+      <table className="table mt-3">
+        <thead>
+          <tr>
+            <th>Travel</th>
+            <th>Type</th>
+            <th>Amount</th>
+            <th>Status</th>
+            <th>Proof</th>
+            <th>HR Remark</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+
+        <tbody>
+
+          {expenses.map(e => (
+            <tr key={e.expenseId}>
+
+              <td>{e.destination}</td>
+              <td>{e.expenseType}</td>
+              <td>₹ {e.amount}</td>
+              <td>{e.status}</td>
+
+              <td>
+                <a
+                  href={`http://localhost:8080/${e.proofUrl}`}
+                  target="_blank"
+                >
+                  View
+                </a>
+              </td>
+
+              <td>{e.hrRemark ?? "-"}</td>
+
+              <td>
+                {e.status === "DRAFT" && (
+                  <button
+                    className="btn btn-success btn-sm"
+                    onClick={() =>
+                      handleSubmit(e.expenseId)
+                    }
+                  >
+                    Submit
+                  </button>
+                )}
+              </td>
+
+            </tr>
+          ))}
+
+        </tbody>
+      </table>
+
+    </div>
+  );
+};
+
+export default ExpenseMy;
+
+import React, { useEffect, useState } from "react";
+import {
+  Expense,
+  getMyExpenses,
+  approveExpense,
+  rejectExpense
+} from "../services/expenseService";
+
+const ExpenseApproval: React.FC = () => {
+
+  const [expenses, setExpenses] =
+    useState<Expense[]>([]);
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const load = async () => {
+    const data = await getMyExpenses();
+    setExpenses(data);
+  };
+
+  const approve = async (id: number) => {
+    await approveExpense(id, "Approved");
+    load();
+  };
+
+  const reject = async (id: number) => {
+
+    const remark =
+      prompt("Enter rejection reason");
+
+    if (!remark) return;
+
+    await rejectExpense(id, remark);
+    load();
+  };
+
+  return (
+    <div className="card p-4">
+
+      <h4>HR Expense Approval</h4>
+
+      <table className="table">
+
+        <thead>
+          <tr>
+            <th>Travel</th>
+            <th>Amount</th>
+            <th>Status</th>
+            <th>Proof</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+
+        <tbody>
+
+          {expenses.map(e => (
+            <tr key={e.expenseId}>
+
+              <td>{e.destination}</td>
+              <td>{e.amount}</td>
+              <td>{e.status}</td>
+
+              <td>
+                <a
+                  href={`http://localhost:8080/${e.proofUrl}`}
+                  target="_blank"
+                >
+                  View
+                </a>
+              </td>
+
+              <td>
+
+                {e.status === "SUBMITTED" && (
+                  <>
+                    <button
+                      className="btn btn-success btn-sm me-2"
+                      onClick={() =>
+                        approve(e.expenseId)}
+                    >
+                      Approve
+                    </button>
+
+                    <button
+                      className="btn btn-danger btn-sm"
+                      onClick={() =>
+                        reject(e.expenseId)}
+                    >
+                      Reject
+                    </button>
+                  </>
+                )}
+
+              </td>
+
+            </tr>
+          ))}
+
+        </tbody>
+      </table>
+
+    </div>
+  );
+};
+
+export default ExpenseApproval;
+
+
