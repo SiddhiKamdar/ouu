@@ -1,35 +1,107 @@
-public class ExpenseResponseDTO {
+package com.example.backend.controller;
 
-    private Integer expenseId;
-    private String destination;
-    private String expenseType;
-    private BigDecimal amount;
-    private String proofUrl;
-    private Date expenseDate;
-    private String status;
-    private String hrRemark;
+import com.example.backend.dto.request.ExpenseRequestDTO;
+import com.example.backend.dto.response.ExpenseResponseDTO;
+import com.example.backend.service.ExpenseService;
 
-    public ExpenseResponseDTO(
-            Integer expenseId,
-            String destination,
-            String expenseType,
-            BigDecimal amount,
-            String proofUrl,
-            Date expenseDate,
-            String status,
-            String hrRemark) {
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
-        this.expenseId = expenseId;
-        this.destination = destination;
-        this.expenseType = expenseType;
-        this.amount = amount;
-        this.proofUrl = proofUrl;
-        this.expenseDate = expenseDate;
-        this.status = status;
-        this.hrRemark = hrRemark;
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/expenses")
+public class ExpenseController {
+
+    @Autowired
+    private ExpenseService expenseService;
+
+
+    // ================= CREATE EXPENSE =================
+    @PreAuthorize("hasAuthority('ROLE_EMPLOYEE')")
+    @PostMapping(
+            value = "/create",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE
+    )
+    public ResponseEntity<ExpenseResponseDTO> createExpense(
+            @RequestPart("data") ExpenseRequestDTO request,
+            @RequestPart("file") MultipartFile file
+    ) throws Exception {
+
+        return ResponseEntity.ok(
+                expenseService.createExpense(request, file)
+        );
+    }
+
+
+    // ================= SUBMIT =================
+    @PreAuthorize("hasAuthority('ROLE_EMPLOYEE')")
+    @PutMapping("/{expenseId}/submit")
+    public ResponseEntity<String> submitExpense(
+            @PathVariable Integer expenseId) {
+
+        expenseService.submitExpense(expenseId);
+        return ResponseEntity.ok("Expense submitted");
+    }
+
+
+    // ================= HR APPROVE =================
+    @PreAuthorize("hasRole('HR')")
+    @PutMapping("/{expenseId}/approve")
+    public ResponseEntity<String> approveExpense(
+            @PathVariable Integer expenseId,
+            @RequestParam String remark) {
+
+        expenseService.approveExpense(expenseId, remark);
+        return ResponseEntity.ok("Expense approved");
+    }
+
+
+    // ================= HR REJECT =================
+    @PreAuthorize("hasRole('HR')")
+    @PutMapping("/{expenseId}/reject")
+    public ResponseEntity<String> rejectExpense(
+            @PathVariable Integer expenseId,
+            @RequestParam String remark) {
+
+        expenseService.rejectExpense(expenseId, remark);
+        return ResponseEntity.ok("Expense rejected");
+    }
+
+
+    // ================= EMPLOYEE VIEW =================
+    @PreAuthorize("hasAuthority('ROLE_EMPLOYEE')")
+    @GetMapping("/my")
+    public ResponseEntity<List<ExpenseResponseDTO>> getMyExpenses() {
+
+        return ResponseEntity.ok(
+                expenseService.getMyExpenses()
+        );
     }
 }
 
+
+package com.example.backend.service;
+
+import com.example.backend.dto.request.ExpenseRequestDTO;
+import com.example.backend.dto.response.ExpenseResponseDTO;
+import com.example.backend.entity.*;
+import com.example.backend.repository.*;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.File;
+import java.math.BigDecimal;
+import java.util.Date;
+import java.util.List;
 
 @Service
 public class ExpenseService {
@@ -50,28 +122,24 @@ public class ExpenseService {
     private ApprovalStatusRepository approvalStatusRepository;
 
     @Autowired
-    private ExpenseReviewRepository reviewRepository;
+    private ExpenseReviewRepository expenseReviewRepository;
 
 
-    // ================= CREATE =================
+    // =====================================================
+    // CREATE EXPENSE
+    // =====================================================
     public ExpenseResponseDTO createExpense(
             ExpenseRequestDTO request,
             MultipartFile proofFile) throws Exception {
 
-        Authentication auth =
-                SecurityContextHolder.getContext().getAuthentication();
+        Employee employee = getLoggedInEmployee();
 
-        Employee employee =
-                employeeRepository
-                        .findByEmail(auth.getName())
-                        .orElseThrow();
+        Travel travel = travelRepository
+                .findById((long) request.getTravelId())
+                .orElseThrow(() ->
+                        new RuntimeException("Travel not found"));
 
-        Travel travel =
-                travelRepository
-                        .findById((long) request.getTravelId())
-                        .orElseThrow();
-
-        // ✅ TRAVEL OWNERSHIP CHECK
+        // ===== TRAVEL ASSIGNMENT CHECK =====
         boolean assigned =
                 travel.getTravelEmployees()
                         .stream()
@@ -81,10 +149,11 @@ public class ExpenseService {
                                         .equals(employee.getEmployeeId()));
 
         if (!assigned)
-            throw new RuntimeException("Not assigned to this travel");
+            throw new RuntimeException(
+                    "You are not assigned to this travel");
 
 
-        // ✅ EXPENSE WINDOW CHECK
+        // ===== EXPENSE WINDOW VALIDATION =====
         Date today = new Date();
 
         Date start = travel.getDepartDate();
@@ -99,7 +168,7 @@ public class ExpenseService {
                     "Expense submission window closed");
 
 
-        // ✅ FILE SAVE
+        // ===== SAVE FILE =====
         String uploadDir =
                 System.getProperty("user.dir")
                         + "/uploads/expense-proofs/";
@@ -115,14 +184,18 @@ public class ExpenseService {
         proofFile.transferTo(
                 new File(uploadDir + fileName));
 
+
         ExpensesType type =
                 expenseTypeRepository
                         .findById(request.getExpenseTypeId())
                         .orElseThrow();
 
+
         ApprovalStatus draftStatus =
-                approvalStatusRepository.findById(1)
+                approvalStatusRepository
+                        .findById(1)
                         .orElseThrow();
+
 
         ExpensesDetail expense = new ExpensesDetail();
 
@@ -137,12 +210,16 @@ public class ExpenseService {
                 "uploads/expense-proofs/" + fileName);
         expense.setApprovalStatus(draftStatus);
 
-        return mapToDTO(
-                expenseRepository.save(expense));
+        ExpensesDetail saved =
+                expenseRepository.save(expense);
+
+        return mapToDTO(saved);
     }
 
 
-    // ================= SUBMIT =================
+    // =====================================================
+    // SUBMIT EXPENSE
+    // =====================================================
     public void submitExpense(Integer expenseId) {
 
         ExpensesDetail expense =
@@ -160,9 +237,12 @@ public class ExpenseService {
     }
 
 
-    // ================= HR APPROVE =================
-    public void approveExpense(Integer expenseId,
-                               String remark) {
+    // =====================================================
+    // APPROVE
+    // =====================================================
+    public void approveExpense(
+            Integer expenseId,
+            String remark) {
 
         Employee hr = getLoggedInEmployee();
 
@@ -186,17 +266,20 @@ public class ExpenseService {
         review.setComment(remark);
         review.setReviewStatus(approved);
 
-        reviewRepository.save(review);
+        expenseReviewRepository.save(review);
     }
 
 
-    // ================= HR REJECT =================
-    public void rejectExpense(Integer expenseId,
-                              String remark) {
+    // =====================================================
+    // REJECT
+    // =====================================================
+    public void rejectExpense(
+            Integer expenseId,
+            String remark) {
 
         if (remark == null || remark.isBlank())
             throw new RuntimeException(
-                    "Remark required");
+                    "Rejection remark required");
 
         Employee hr = getLoggedInEmployee();
 
@@ -220,11 +303,13 @@ public class ExpenseService {
         review.setComment(remark);
         review.setReviewStatus(rejected);
 
-        reviewRepository.save(review);
+        expenseReviewRepository.save(review);
     }
 
 
-    // ================= EMPLOYEE VIEW =================
+    // =====================================================
+    // MY EXPENSES
+    // =====================================================
     public List<ExpenseResponseDTO> getMyExpenses() {
 
         Employee emp = getLoggedInEmployee();
@@ -238,6 +323,9 @@ public class ExpenseService {
     }
 
 
+    // =====================================================
+    // HELPERS
+    // =====================================================
     private Employee getLoggedInEmployee() {
 
         Authentication auth =
@@ -255,7 +343,7 @@ public class ExpenseService {
             ExpensesDetail e) {
 
         String remark =
-                reviewRepository.findAll()
+                expenseReviewRepository.findAll()
                         .stream()
                         .filter(r ->
                                 r.getExpense()
@@ -268,8 +356,7 @@ public class ExpenseService {
         return new ExpenseResponseDTO(
                 e.getExpenseId(),
                 e.getTravel().getDestination(),
-                e.getExpenseType()
-                        .getExpenseTypeName(),
+                e.getExpenseType().getExpenseTypeName(),
                 e.getAmount(),
                 e.getProofUrl(),
                 e.getExpenseDate(),
@@ -279,64 +366,3 @@ public class ExpenseService {
         );
     }
 }
-
-
-@RestController
-@RequestMapping("/api/expenses")
-public class ExpenseController {
-
-    @Autowired
-    private ExpenseService expenseService;
-
-    @PreAuthorize("hasAuthority('ROLE_EMPLOYEE')")
-    @PostMapping(value="/create",
-            consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<?> create(
-            @RequestPart("data")
-            ExpenseRequestDTO request,
-            @RequestPart("file")
-            MultipartFile file) throws Exception {
-
-        return ResponseEntity.ok(
-                expenseService.createExpense(request,file));
-    }
-
-    @PreAuthorize("hasAuthority('ROLE_EMPLOYEE')")
-    @PutMapping("/{id}/submit")
-    public ResponseEntity<?> submit(
-            @PathVariable Integer id){
-
-        expenseService.submitExpense(id);
-        return ResponseEntity.ok("Submitted");
-    }
-
-
-    @PreAuthorize("hasRole('HR')")
-    @PutMapping("/{id}/approve")
-    public ResponseEntity<?> approve(
-            @PathVariable Integer id,
-            @RequestParam String remark){
-
-        expenseService.approveExpense(id,remark);
-        return ResponseEntity.ok("Approved");
-    }
-
-    @PreAuthorize("hasRole('HR')")
-    @PutMapping("/{id}/reject")
-    public ResponseEntity<?> reject(
-            @PathVariable Integer id,
-            @RequestParam String remark){
-
-        expenseService.rejectExpense(id,remark);
-        return ResponseEntity.ok("Rejected");
-    }
-
-    @PreAuthorize("hasAuthority('ROLE_EMPLOYEE')")
-    @GetMapping("/my")
-    public ResponseEntity<?> myExpenses(){
-        return ResponseEntity.ok(
-                expenseService.getMyExpenses());
-    }
-}
-
-
