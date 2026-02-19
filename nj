@@ -1,368 +1,83 @@
-package com.example.backend.controller;
+package com.example.backend.entity;
 
-import com.example.backend.dto.request.ExpenseRequestDTO;
-import com.example.backend.dto.response.ExpenseResponseDTO;
-import com.example.backend.service.ExpenseService;
-
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
-
-import java.util.List;
-
-@RestController
-@RequestMapping("/api/expenses")
-public class ExpenseController {
-
-    @Autowired
-    private ExpenseService expenseService;
-
-
-    // ================= CREATE EXPENSE =================
-    @PreAuthorize("hasAuthority('ROLE_EMPLOYEE')")
-    @PostMapping(
-            value = "/create",
-            consumes = MediaType.MULTIPART_FORM_DATA_VALUE
-    )
-    public ResponseEntity<ExpenseResponseDTO> createExpense(
-            @RequestPart("data") ExpenseRequestDTO request,
-            @RequestPart("file") MultipartFile file
-    ) throws Exception {
-
-        return ResponseEntity.ok(
-                expenseService.createExpense(request, file)
-        );
-    }
-
-
-    // ================= SUBMIT =================
-    @PreAuthorize("hasAuthority('ROLE_EMPLOYEE')")
-    @PutMapping("/{expenseId}/submit")
-    public ResponseEntity<String> submitExpense(
-            @PathVariable Integer expenseId) {
-
-        expenseService.submitExpense(expenseId);
-        return ResponseEntity.ok("Expense submitted");
-    }
-
-
-    // ================= HR APPROVE =================
-    @PreAuthorize("hasRole('HR')")
-    @PutMapping("/{expenseId}/approve")
-    public ResponseEntity<String> approveExpense(
-            @PathVariable Integer expenseId,
-            @RequestParam String remark) {
-
-        expenseService.approveExpense(expenseId, remark);
-        return ResponseEntity.ok("Expense approved");
-    }
-
-
-    // ================= HR REJECT =================
-    @PreAuthorize("hasRole('HR')")
-    @PutMapping("/{expenseId}/reject")
-    public ResponseEntity<String> rejectExpense(
-            @PathVariable Integer expenseId,
-            @RequestParam String remark) {
-
-        expenseService.rejectExpense(expenseId, remark);
-        return ResponseEntity.ok("Expense rejected");
-    }
-
-
-    // ================= EMPLOYEE VIEW =================
-    @PreAuthorize("hasAuthority('ROLE_EMPLOYEE')")
-    @GetMapping("/my")
-    public ResponseEntity<List<ExpenseResponseDTO>> getMyExpenses() {
-
-        return ResponseEntity.ok(
-                expenseService.getMyExpenses()
-        );
-    }
-}
-
-
-package com.example.backend.service;
-
-import com.example.backend.dto.request.ExpenseRequestDTO;
-import com.example.backend.dto.response.ExpenseResponseDTO;
-import com.example.backend.entity.*;
-import com.example.backend.repository.*;
-
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
-
-import java.io.File;
-import java.math.BigDecimal;
+import jakarta.persistence.*;
 import java.util.Date;
 import java.util.List;
 
-@Service
-public class ExpenseService {
+@Entity
+@Table(name = "travel_details")
+public class Travel {
 
-    @Autowired
-    private ExpenseRepository expenseRepository;
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "travel_id")
+    private int travelId;
 
-    @Autowired
-    private TravelModuleRepository travelRepository;
+    @Column(name = "destination")
+    private String destination;
 
-    @Autowired
-    private ExpenseTypeRepository expenseTypeRepository;
+    @Column(name = "depart_date")
+    private Date departDate;
 
-    @Autowired
-    private EmployeeRepository employeeRepository;
+    @Column(name = "return_date")
+    private Date returnDate;
 
-    @Autowired
-    private ApprovalStatusRepository approvalStatusRepository;
-
-    @Autowired
-    private ExpenseReviewRepository expenseReviewRepository;
-
-
-    // =====================================================
-    // CREATE EXPENSE
-    // =====================================================
-    public ExpenseResponseDTO createExpense(
-            ExpenseRequestDTO request,
-            MultipartFile proofFile) throws Exception {
-
-        Employee employee = getLoggedInEmployee();
-
-        Travel travel = travelRepository
-                .findById((long) request.getTravelId())
-                .orElseThrow(() ->
-                        new RuntimeException("Travel not found"));
-
-        // ===== TRAVEL ASSIGNMENT CHECK =====
-        boolean assigned =
-                travel.getTravelEmployees()
-                        .stream()
-                        .anyMatch(te ->
-                                te.getEmployee()
-                                        .getEmployeeId()
-                                        .equals(employee.getEmployeeId()));
-
-        if (!assigned)
-            throw new RuntimeException(
-                    "You are not assigned to this travel");
+    @ManyToOne
+    @JoinColumn(name = "scheduler_id")
+    private Employee scheduler;
 
 
-        // ===== EXPENSE WINDOW VALIDATION =====
-        Date today = new Date();
-
-        Date start = travel.getDepartDate();
-
-        Date end = new Date(
-                travel.getReturnDate().getTime()
-                        + (10L * 24 * 60 * 60 * 1000)
-        );
-
-        if (today.before(start) || today.after(end))
-            throw new RuntimeException(
-                    "Expense submission window closed");
+    // ✅ ADD THIS RELATION
+    @OneToMany(mappedBy = "travel")
+    private List<TravelEmployee> travelEmployees;
 
 
-        // ===== SAVE FILE =====
-        String uploadDir =
-                System.getProperty("user.dir")
-                        + "/uploads/expense-proofs/";
-
-        File dir = new File(uploadDir);
-        if (!dir.exists()) dir.mkdirs();
-
-        String fileName =
-                System.currentTimeMillis()
-                        + "_" +
-                        proofFile.getOriginalFilename();
-
-        proofFile.transferTo(
-                new File(uploadDir + fileName));
-
-
-        ExpensesType type =
-                expenseTypeRepository
-                        .findById(request.getExpenseTypeId())
-                        .orElseThrow();
-
-
-        ApprovalStatus draftStatus =
-                approvalStatusRepository
-                        .findById(1)
-                        .orElseThrow();
-
-
-        ExpensesDetail expense = new ExpensesDetail();
-
-        expense.setEmployee(employee);
-        expense.setTravel(travel);
-        expense.setExpenseType(type);
-        expense.setAmount(request.getAmount());
-        expense.setComment(request.getComment());
-        expense.setExpenseDate(request.getExpenseDate());
-        expense.setUploadDate(new Date());
-        expense.setProofUrl(
-                "uploads/expense-proofs/" + fileName);
-        expense.setApprovalStatus(draftStatus);
-
-        ExpensesDetail saved =
-                expenseRepository.save(expense);
-
-        return mapToDTO(saved);
+    public int getTravelId() {
+        return travelId;
     }
 
-
-    // =====================================================
-    // SUBMIT EXPENSE
-    // =====================================================
-    public void submitExpense(Integer expenseId) {
-
-        ExpensesDetail expense =
-                expenseRepository.findById(expenseId)
-                        .orElseThrow();
-
-        ApprovalStatus submitted =
-                approvalStatusRepository
-                        .findById(2)
-                        .orElseThrow();
-
-        expense.setApprovalStatus(submitted);
-
-        expenseRepository.save(expense);
+    public void setTravelId(int travelId) {
+        this.travelId = travelId;
     }
 
-
-    // =====================================================
-    // APPROVE
-    // =====================================================
-    public void approveExpense(
-            Integer expenseId,
-            String remark) {
-
-        Employee hr = getLoggedInEmployee();
-
-        ExpensesDetail expense =
-                expenseRepository.findById(expenseId)
-                        .orElseThrow();
-
-        ApprovalStatus approved =
-                approvalStatusRepository
-                        .findById(3)
-                        .orElseThrow();
-
-        expense.setApprovalStatus(approved);
-        expenseRepository.save(expense);
-
-        ExpenseReview review =
-                new ExpenseReview();
-
-        review.setExpense(expense);
-        review.setReviewedBy(hr);
-        review.setComment(remark);
-        review.setReviewStatus(approved);
-
-        expenseReviewRepository.save(review);
+    public String getDestination() {
+        return destination;
     }
 
-
-    // =====================================================
-    // REJECT
-    // =====================================================
-    public void rejectExpense(
-            Integer expenseId,
-            String remark) {
-
-        if (remark == null || remark.isBlank())
-            throw new RuntimeException(
-                    "Rejection remark required");
-
-        Employee hr = getLoggedInEmployee();
-
-        ExpensesDetail expense =
-                expenseRepository.findById(expenseId)
-                        .orElseThrow();
-
-        ApprovalStatus rejected =
-                approvalStatusRepository
-                        .findById(4)
-                        .orElseThrow();
-
-        expense.setApprovalStatus(rejected);
-        expenseRepository.save(expense);
-
-        ExpenseReview review =
-                new ExpenseReview();
-
-        review.setExpense(expense);
-        review.setReviewedBy(hr);
-        review.setComment(remark);
-        review.setReviewStatus(rejected);
-
-        expenseReviewRepository.save(review);
+    public void setDestination(String destination) {
+        this.destination = destination;
     }
 
-
-    // =====================================================
-    // MY EXPENSES
-    // =====================================================
-    public List<ExpenseResponseDTO> getMyExpenses() {
-
-        Employee emp = getLoggedInEmployee();
-
-        return expenseRepository
-                .findByEmployee_EmployeeId(
-                        emp.getEmployeeId())
-                .stream()
-                .map(this::mapToDTO)
-                .toList();
+    public Date getDepartDate() {
+        return departDate;
     }
 
-
-    // =====================================================
-    // HELPERS
-    // =====================================================
-    private Employee getLoggedInEmployee() {
-
-        Authentication auth =
-                SecurityContextHolder
-                        .getContext()
-                        .getAuthentication();
-
-        return employeeRepository
-                .findByEmail(auth.getName())
-                .orElseThrow();
+    public void setDepartDate(Date departDate) {
+        this.departDate = departDate;
     }
 
+    public Date getReturnDate() {
+        return returnDate;
+    }
 
-    private ExpenseResponseDTO mapToDTO(
-            ExpensesDetail e) {
+    public void setReturnDate(Date returnDate) {
+        this.returnDate = returnDate;
+    }
 
-        String remark =
-                expenseReviewRepository.findAll()
-                        .stream()
-                        .filter(r ->
-                                r.getExpense()
-                                        .getExpenseId()
-                                        .equals(e.getExpenseId()))
-                        .map(ExpenseReview::getComment)
-                        .findFirst()
-                        .orElse(null);
+    public Employee getScheduler() {
+        return scheduler;
+    }
 
-        return new ExpenseResponseDTO(
-                e.getExpenseId(),
-                e.getTravel().getDestination(),
-                e.getExpenseType().getExpenseTypeName(),
-                e.getAmount(),
-                e.getProofUrl(),
-                e.getExpenseDate(),
-                e.getApprovalStatus()
-                        .getApprovalStatusName(),
-                remark
-        );
+    public void setScheduler(Employee scheduler) {
+        this.scheduler = scheduler;
+    }
+
+    public List<TravelEmployee> getTravelEmployees() {
+        return travelEmployees;
+    }
+
+    public void setTravelEmployees(
+            List<TravelEmployee> travelEmployees) {
+        this.travelEmployees = travelEmployees;
     }
 }
