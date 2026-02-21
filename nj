@@ -1,297 +1,253 @@
-package com.example.backend.config;
-
-import org.springframework.context.annotation.Configuration;
-import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
-import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
-import org.springframework.beans.factory.annotation.Value;
-
-@Configuration
-public class FileUploadConfig implements WebMvcConfigurer {
-
-    @Value("${file.upload.base-dir}")
-    private String baseDir;
-
-    @Override
-    public void addResourceHandlers(ResourceHandlerRegistry registry) {
-
-        registry.addResourceHandler("/uploads/**")
-                .addResourceLocations("file:" + baseDir);
-    }
-}
-
 package com.example.backend.service;
 
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
-
-import java.io.File;
-import java.util.UUID;
-
-@Service
-public class ExpenseProofService {
-
-    @Value("${file.upload.base-dir}")
-    private String baseDir;
-
-    public String uploadProof(MultipartFile file) {
-
-        try {
-
-            String folderPath =
-                    baseDir + File.separator + "expense-proofs";
-
-            File directory = new File(folderPath);
-
-            if (!directory.exists())
-                directory.mkdirs();
-
-            String fileName =
-                    UUID.randomUUID() + "_" +
-                    file.getOriginalFilename();
-
-            String fullPath =
-                    folderPath + File.separator + fileName;
-
-            file.transferTo(new File(fullPath));
-
-            // URL accessible path
-            return "uploads/expense-proofs/" + fileName;
-
-        } catch (Exception e) {
-            throw new RuntimeException(
-                    "Expense proof upload failed");
-        }
-    }
-}
-
-@Autowired
-private ExpenseProofService proofService;
-
-
-@PostMapping(
-        value="/upload-proof",
-        consumes = MediaType.MULTIPART_FORM_DATA_VALUE
-)
-@PreAuthorize("hasRole('EMPLOYEE')")
-public ResponseEntity<String> uploadProof(
-        @RequestParam MultipartFile file){
-
-    String path = proofService.uploadProof(file);
-
-    return ResponseEntity.ok(path);
-}
-
-
-package com.example.backend.service;
-
-import com.example.backend.dto.response.TravelDocumentResponseDTO;
 import com.example.backend.entity.*;
 import com.example.backend.repository.*;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.multipart.MultipartFile;
-
-import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
-import java.io.File;
+import java.math.BigDecimal;
 import java.util.Date;
 import java.util.List;
-import java.util.UUID;
 
 @Service
-public class TravelDocumentService {
-
-    // ✅ NEW BASE DIRECTORY
-    @Value("${file.upload.base-dir}")
-    private String baseDir;
+public class ExpenseService {
 
     @Autowired
-    private TravelDocumentRepository travelDocumentRepository;
+    private ExpensesRepository expenseRepo;
 
     @Autowired
-    private TravelModuleRepository travelRepository;
+    private TravelModuleRepository travelRepo;
 
     @Autowired
     private EmployeeRepository employeeRepository;
 
     @Autowired
-    private DocumentTypeRepository documentTypeRepository;
+    private ExpensesReviewRepository reviewRepo;
+
+    @Autowired
+    private ApprovalStatusRepository statusRepo;
 
 
-    // ================= UPLOAD DOCUMENT =================
-    public void uploadDocument(
-            MultipartFile file,
-            int travelId,
-            int uploadedById,
-            Integer employeeId,
-            int documentTypeId
-    ) {
 
-        try {
+    public ExpensesDetail createExpense(
+            Integer travelId,
+            Integer expenseTypeId,
+            BigDecimal amount,
+            String comment,
+            String proofUrl){
 
-            // ✅ travel-documents folder
-            String folderPath =
-                    baseDir + File.separator + "travel-documents";
+        if(proofUrl == null || proofUrl.isEmpty())
+            throw new RuntimeException("Proof required");
 
-            File directory = new File(folderPath);
+        Travel travel =
+                travelRepo.findById(travelId.longValue())
+                        .orElseThrow();
 
-            if (!directory.exists())
-                directory.mkdirs();
+        Date today = new Date();
 
-
-            String fileName =
-                    UUID.randomUUID() + "_" +
-                            file.getOriginalFilename();
-
-            String fullPath =
-                    folderPath + File.separator + fileName;
-
-            file.transferTo(new File(fullPath));
-
-
-            Travel travel = travelRepository.findById((long) travelId)
-                    .orElseThrow(() ->
-                            new RuntimeException("Travel not found"));
-
-            Employee uploadedBy =
-                    employeeRepository.findById((long) uploadedById)
-                            .orElseThrow(() ->
-                                    new RuntimeException("Uploader not found"));
-
-            DocumentType documentType =
-                    documentTypeRepository.findById(documentTypeId)
-                            .orElseThrow(() ->
-                                    new RuntimeException("Document type not found"));
-
-
-            // ✅ PUBLIC URL PATH
-            String dbPath =
-                    "uploads/travel-documents/" + fileName;
-
-
-            TravelDocument document = new TravelDocument();
-            document.setTravel(travel);
-            document.setUploadedBy(uploadedBy);
-            document.setDocumentType(documentType);
-            document.setDocumentUrl(dbPath);
-            document.setUploadedDate(new Date());
-            document.setDeleted(false);
-
-
-            if (employeeId != null) {
-
-                Employee employee =
-                        employeeRepository.findById((long) employeeId)
-                                .orElseThrow(() ->
-                                        new RuntimeException("Employee not found"));
-
-                document.setEmployee(employee);
-            }
-
-            travelDocumentRepository.save(document);
-
-        }
-        catch (Exception e) {
-            e.printStackTrace();
+        if(today.before(travel.getDepartDate()))
             throw new RuntimeException(
-                    "File upload failed : " + e.getMessage());
-        }
+                    "Expense not allowed before travel start");
+
+        long diff =
+                today.getTime()
+                        - travel.getReturnDate().getTime();
+
+        long days = diff/(1000*60*60*24);
+
+        if(days > 10)
+            throw new RuntimeException(
+                    "Expense submission window closed");
+
+        Employee employee = getLoggedInEmployee();
+
+        ExpensesDetail expense = new ExpensesDetail();
+        expense.setTravel(travel);
+        expense.setEmployee(employee);
+        expense.setAmount(amount);
+        expense.setComment(comment);
+        expense.setProofUrl(proofUrl);
+        expense.setUploadDate(today);
+        expense.setExpenseDate(today);
+
+        return expenseRepo.save(expense);
     }
 
 
-    // ================= GET DOCUMENTS =================
-    public List<TravelDocumentResponseDTO>
-    getDocumentsByTravel(int travelId) {
 
-        Authentication authentication =
-                SecurityContextHolder.getContext().getAuthentication();
+    public void approveExpense(
+            Integer expenseId,
+            Integer hrId){
 
-        String email = authentication.getName();
-        String role =
-                authentication.getAuthorities()
-                        .iterator()
-                        .next()
-                        .getAuthority();
-
-        Employee loggedInUser =
-                employeeRepository.findByEmail(email)
-                        .orElseThrow(() ->
-                                new RuntimeException("User not found"));
-
-        List<TravelDocument> documents;
+        saveReview(expenseId,hrId,2,null);
+    }
 
 
-        // -------- HR --------
-        if (role.equals("ROLE_HR")) {
 
-            documents =
-                    travelDocumentRepository
-                            .findByTravel_TravelId(travelId);
-        }
+    public void rejectExpense(
+            Integer expenseId,
+            Integer hrId,
+            String remark){
 
-        // -------- MANAGER --------
-        else if (role.equals("ROLE_MANAGER")) {
+        if(remark==null || remark.isEmpty())
+            throw new RuntimeException("Remark required");
 
-            List<Employee> teamMembers =
-                    employeeRepository.findBySupervisor(loggedInUser);
-
-            List<Integer> teamIds =
-                    teamMembers.stream()
-                            .map(Employee::getEmployeeId)
-                            .toList();
-
-            documents =
-                    travelDocumentRepository
-                            .findByTravel_TravelId(travelId)
-                            .stream()
-                            .filter(doc -> {
-                                if (doc.getEmployee() == null)
-                                    return true;
-
-                                return teamIds.contains(
-                                        doc.getEmployee()
-                                                .getEmployeeId());
-                            })
-                            .toList();
-        }
-
-        // -------- EMPLOYEE --------
-        else {
-
-            documents =
-                    travelDocumentRepository
-                            .findByTravel_TravelId(travelId)
-                            .stream()
-                            .filter(doc -> {
-
-                                if (doc.getEmployee() == null)
-                                    return true;
-
-                                return doc.getEmployee()
-                                        .getEmployeeId()
-                                        ==
-                                        loggedInUser.getEmployeeId();
-                            })
-                            .toList();
-        }
+        saveReview(expenseId,hrId,3,remark);
+    }
 
 
-        return documents.stream()
-                .map(doc ->
-                        new TravelDocumentResponseDTO(
-                                doc.getId(),
-                                doc.getDocumentUrl(),
-                                doc.getUploadedDate(),
-                                doc.getUploadedBy() != null
-                                        ? doc.getUploadedBy().getFullName()
-                                        : "System"
-                        ))
-                .toList();
+
+    private void saveReview(
+            Integer expenseId,
+            Integer hrId,
+            Integer statusId,
+            String comment){
+
+        ExpensesDetail expense =
+                expenseRepo.findById(expenseId)
+                        .orElseThrow();
+
+        Employee reviewer =
+                employeeRepository
+                        .findById(hrId.longValue())
+                        .orElseThrow();
+
+        ApprovalStatus status =
+                statusRepo.findById(statusId)
+                        .orElseThrow();
+
+        ExpensesReview review = new ExpensesReview();
+        review.setExpense(expense);
+        review.setReviewedBy(reviewer);
+        review.setStatus(status);
+        review.setComment(comment);
+
+        reviewRepo.save(review);
+    }
+
+
+
+    private Employee getLoggedInEmployee(){
+
+        String email =
+                SecurityContextHolder
+                        .getContext()
+                        .getAuthentication()
+                        .getName();
+
+        return employeeRepository
+                .findByEmail(email)
+                .orElseThrow();
+    }
+
+
+
+    public List<ExpensesDetail> getMyExpenses(){
+
+        Employee emp = getLoggedInEmployee();
+
+        return expenseRepo
+                .findByEmployeeEmployeeId(
+                        emp.getEmployeeId());
+    }
+
+
+
+    public List<ExpensesDetail> getAllExpenses(){
+        return expenseRepo.findAll();
     }
 }
 
 
+package com.example.backend.controller;
+
+import com.example.backend.entity.ExpensesDetail;
+import com.example.backend.service.ExpenseService;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+
+import java.math.BigDecimal;
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/expenses")
+public class ExpenseController {
+
+    @Autowired
+    private ExpenseService expenseService;
+
+
+
+    @PostMapping
+    @PreAuthorize(
+    "hasAnyRole('EMPLOYEE','HR','MANAGER')")
+    public ResponseEntity<ExpensesDetail> createExpense(
+            @RequestParam Integer travelId,
+            @RequestParam Integer expenseTypeId,
+            @RequestParam BigDecimal amount,
+            @RequestParam String proofUrl,
+            @RequestParam(required=false)
+            String comment){
+
+        return ResponseEntity.ok(
+                expenseService.createExpense(
+                        travelId,
+                        expenseTypeId,
+                        amount,
+                        comment,
+                        proofUrl
+                ));
+    }
+
+
+
+    @GetMapping("/my")
+    @PreAuthorize(
+    "hasAnyRole('EMPLOYEE','HR','MANAGER')")
+    public ResponseEntity<List<ExpensesDetail>>
+    myExpenses(){
+
+        return ResponseEntity.ok(
+                expenseService.getMyExpenses());
+    }
+
+
+
+    @GetMapping
+    @PreAuthorize("hasRole('HR')")
+    public ResponseEntity<List<ExpensesDetail>>
+    allExpenses(){
+
+        return ResponseEntity.ok(
+                expenseService.getAllExpenses());
+    }
+
+
+
+    @PutMapping("/{id}/approve")
+    @PreAuthorize("hasRole('HR')")
+    public void approve(
+            @PathVariable Integer id,
+            @RequestParam Integer hrId){
+
+        expenseService.approveExpense(id,hrId);
+    }
+
+
+
+    @PutMapping("/{id}/reject")
+    @PreAuthorize("hasRole('HR')")
+    public void reject(
+            @PathVariable Integer id,
+            @RequestParam Integer hrId,
+            @RequestParam String remark){
+
+        expenseService.rejectExpense(
+                id,hrId,remark);
+    }
+}
