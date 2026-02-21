@@ -1,395 +1,284 @@
-<Route
- path="/app/travel/:travelId/add-expense"
- element={<AddExpense />}
-/>
+package com.example.backend.entity;
+
+import jakarta.persistence.*;
+import java.math.BigDecimal;
+import java.util.Date;
+
+@Entity
+@Table(name = "expenses_detail")
+public class ExpensesDetail {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "expense_id")
+    private Integer expenseId;
+
+    @ManyToOne
+    @JoinColumn(name = "travel_id")
+    private Travel travel;
+
+    @ManyToOne
+    @JoinColumn(name = "expense_type_id")
+    private ExpensesType expenseType;
+
+    @ManyToOne
+    @JoinColumn(name = "employee_id")
+    private Employee employee;
+
+    @Column(name = "amount")
+    private BigDecimal amount;
+
+    private String comment;
+
+    @Column(name = "proof_url")
+    private String proofUrl;
+
+    @Temporal(TemporalType.DATE)
+    @Column(name = "expense_date")
+    private Date expenseDate;
+
+    @Temporal(TemporalType.DATE)
+    @Column(name = "upload_date")
+    private Date uploadDate;
+
+    @Column(name = "is_deleted")
+    private Boolean isDeleted = false;
+
+    // getters setters
+}
 
 
-import React,
-{ useState } from "react";
+package com.example.backend.entity;
 
-import { useNavigate,
-useParams } from "react-router-dom";
+import jakarta.persistence.*;
+import java.util.Date;
 
-import {
-  createExpense
-} from "../services/expenseService";
+@Entity
+@Table(name="expenses_review")
+public class ExpensesReview {
 
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name="expense_review_id")
+    private Integer id;
 
-const AddExpense:React.FC=()=>{
+    @ManyToOne
+    @JoinColumn(name="expense_id")
+    private ExpensesDetail expense;
 
-const navigate=useNavigate();
-const {travelId}=useParams();
+    @ManyToOne
+    @JoinColumn(name="reviewed_by_id")
+    private Employee reviewedBy;
 
-const[amount,setAmount]=
-useState("");
+    @ManyToOne
+    @JoinColumn(name="review_status_id")
+    private ApprovalStatus status;
 
-const[comment,setComment]=
-useState("");
+    private String comment;
 
-const[expenseDate,
-setExpenseDate]=useState("");
+    @Temporal(TemporalType.TIMESTAMP)
+    private Date timestamp = new Date();
 
-const[file,setFile]=
-useState<File|null>(null);
+    @Column(name="is_deleted")
+    private Boolean isDeleted=false;
 
-
-const handleSubmit=
-async(e:React.FormEvent)=>{
-
-e.preventDefault();
-
-if(!file)return;
-
-await createExpense(
-{
- travelId:Number(travelId),
- expenseTypeId:1,
- amount:Number(amount),
- comment,
- expenseDate
-},
-file
-);
-
-navigate(
-`/app/travel/${travelId}`
-);
-
-};
+}
 
 
-return(
+@Repository
+public interface ExpensesRepository
+        extends JpaRepository<ExpensesDetail,Integer>{
 
-<div
-className="card p-4"
-style={{maxWidth:"600px"}}>
+    List<ExpensesDetail>
+    findByEmployeeEmployeeId(Integer empId);
 
-<h4>Add Expense</h4>
+    List<ExpensesDetail>
+    findByTravelTravelId(Integer travelId);
+}
 
-<form onSubmit={handleSubmit}>
 
-<input
-className="form-control mb-3"
-placeholder="Amount"
-value={amount}
-onChange={(e)=>
-setAmount(e.target.value)}
-required
-/>
+@Repository
+public interface ExpensesReviewRepository
+        extends JpaRepository<ExpensesReview,Integer>{
 
-<input
-type="date"
-className="form-control mb-3"
-value={expenseDate}
-onChange={(e)=>
-setExpenseDate(e.target.value)}
-required
-/>
-
-<textarea
-className="form-control mb-3"
-placeholder="Comment"
-value={comment}
-onChange={(e)=>
-setComment(e.target.value)}
-/>
-
-<input
-type="file"
-className="form-control mb-3"
-onChange={(e)=>
-setFile(
-e.target.files?.[0]||null)}
-required
-/>
-
-<button
-className="btn btn-success w-100">
-Save Expense
-</button>
-
-</form>
-
-</div>
-);
-};
-
-export default AddExpense;
+    ExpensesReview
+    findTopByExpenseExpenseIdOrderByTimestampDesc(Integer expenseId);
+}
 
 
 
+@Service
+public class ExpenseService {
 
-import React, { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+    @Autowired
+    private ExpensesRepository expenseRepo;
 
-import {
-  getTravelById,
-  type Travel
-} from "../services/travelService";
+    @Autowired
+    private TravelModuleRepository travelRepo;
 
-import {
-  getDocumentsByTravel,
-  uploadDocument,
-  type TravelDocument
-} from "../services/documentService";
+    @Autowired
+    private EmployeeRepository employeeRepo;
 
-import {
-  getExpensesByTravel,
-  submitExpense,
-  type Expense
-} from "../services/expenseService";
+    @Autowired
+    private ApprovalStatusRepository statusRepo;
+
+    @Autowired
+    private ExpensesReviewRepository reviewRepo;
 
 
-const TravelDetail: React.FC = () => {
+    // ================= CREATE DRAFT =================
+    public ExpensesDetail createExpense(
+            Integer travelId,
+            Integer employeeId,
+            Integer expenseTypeId,
+            BigDecimal amount,
+            String comment,
+            String proofUrl,
+            Date expenseDate
+    ){
 
-  const { travelId } = useParams();
-  const navigate = useNavigate();
+        if(proofUrl==null || proofUrl.isEmpty())
+            throw new RuntimeException("Proof mandatory");
 
-  const user =
-    JSON.parse(localStorage.getItem("user") || "{}");
+        Travel travel =
+                travelRepo.findById(travelId.longValue())
+                        .orElseThrow();
 
-  const [travel, setTravel] =
-    useState<Travel | null>(null);
+        Date today = new Date();
 
-  const [documents, setDocuments] =
-    useState<TravelDocument[]>([]);
+        if(today.before(travel.getDepartDate()))
+            throw new RuntimeException(
+                    "Expense cannot be added before travel start");
 
-  const [expenses, setExpenses] =
-    useState<Expense[]>([]);
+        long diff =
+                today.getTime() -
+                travel.getReturnDate().getTime();
 
-  const [selectedFile, setSelectedFile] =
-    useState<File | null>(null);
+        long days = diff/(1000*60*60*24);
 
+        if(days>10)
+            throw new RuntimeException(
+                    "Expense window expired");
 
-  // ================= LOAD =================
-  useEffect(() => {
-    if (travelId) {
-      loadTravel();
-      loadDocuments();
-      loadExpenses();
+        Employee emp =
+                employeeRepo.findById(employeeId.longValue())
+                        .orElseThrow();
+
+        ExpensesDetail expense = new ExpensesDetail();
+        expense.setTravel(travel);
+        expense.setEmployee(emp);
+        expense.setAmount(amount);
+        expense.setComment(comment);
+        expense.setProofUrl(proofUrl);
+        expense.setExpenseDate(expenseDate);
+        expense.setUploadDate(today);
+
+        return expenseRepo.save(expense);
     }
-  }, [travelId]);
 
 
-  const loadTravel = async () => {
-    const data =
-      await getTravelById(travelId!);
-    setTravel(data);
-  };
+    // ================= APPROVE =================
+    public void approveExpense(
+            Integer expenseId,
+            Integer hrId){
 
-  const loadDocuments = async () => {
-    const data =
-      await getDocumentsByTravel(travelId!);
-    setDocuments(data);
-  };
-
-  const loadExpenses = async () => {
-    const data =
-      await getExpensesByTravel(travelId!);
-    setExpenses(data);
-  };
+        saveReview(expenseId,hrId,2,null);
+    }
 
 
-  // ================= DOCUMENT UPLOAD =================
-  const handleUpload = async () => {
+    // ================= REJECT =================
+    public void rejectExpense(
+            Integer expenseId,
+            Integer hrId,
+            String remark){
 
-    if (!selectedFile) return;
+        if(remark==null)
+            throw new RuntimeException(
+                    "Remark required");
 
-    await uploadDocument(
-      travelId!,
-      selectedFile,
-      user.employeeId,
-      user.role === "EMPLOYEE"
-        ? user.employeeId
-        : undefined
-    );
-
-    setSelectedFile(null);
-    loadDocuments();
-  };
+        saveReview(expenseId,hrId,3,remark);
+    }
 
 
-  // ================= SUBMIT EXPENSE =================
-  const handleSubmitExpense =
-    async (expenseId: number) => {
+    private void saveReview(
+            Integer expenseId,
+            Integer hrId,
+            Integer statusId,
+            String comment){
 
-      await submitExpense(expenseId);
-      loadExpenses();
-    };
+        ExpensesDetail expense =
+                expenseRepo.findById(expenseId)
+                        .orElseThrow();
 
+        Employee hr =
+                employeeRepo.findById(hrId.longValue())
+                        .orElseThrow();
 
-  if (!travel)
-    return <div>Loading...</div>;
+        ApprovalStatus status =
+                statusRepo.findById(statusId)
+                        .orElseThrow();
 
+        ExpensesReview review=new ExpensesReview();
+        review.setExpense(expense);
+        review.setReviewedBy(hr);
+        review.setStatus(status);
+        review.setComment(comment);
 
-  return (
-    <div className="card p-4 shadow-sm">
+        reviewRepo.save(review);
+    }
+}
 
-      {/* ================= TRAVEL INFO ================= */}
+@RestController
+@RequestMapping("/api/expenses")
+public class ExpenseController {
 
-      <h4>Travel Detail</h4>
-
-      <p>
-        <strong>Destination:</strong>{" "}
-        {travel.destination}
-      </p>
-
-      <p>
-        <strong>Employees:</strong>{" "}
-        {travel.employeeNames?.join(", ")}
-      </p>
-
-      <p>
-        <strong>Departure:</strong>{" "}
-        {new Date(
-          travel.departDate
-        ).toLocaleDateString()}
-      </p>
-
-      <p>
-        <strong>Return:</strong>{" "}
-        {new Date(
-          travel.returnDate
-        ).toLocaleDateString()}
-      </p>
+    @Autowired
+    private ExpenseService expenseService;
 
 
-      {/* ================= DOCUMENTS ================= */}
+    @PostMapping
+    @PreAuthorize("hasRole('EMPLOYEE')")
+    public ResponseEntity<?> create(
+            @RequestParam Integer travelId,
+            @RequestParam Integer employeeId,
+            @RequestParam Integer expenseTypeId,
+            @RequestParam BigDecimal amount,
+            @RequestParam String proofUrl,
+            @RequestParam(required=false)
+            String comment){
 
-      <hr />
-
-      <h5>Documents</h5>
-
-      {documents.length === 0 &&
-        <p>No documents uploaded yet.</p>
-      }
-
-      <ul>
-        {documents.map(doc => (
-          <li key={doc.id}>
-            <a
-              href={`http://localhost:8080/${doc.documentUrl}`}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {doc.documentUrl
-                .split(/[/\\]/)
-                .pop()}
-            </a>
-          </li>
-        ))}
-      </ul>
-
-      <h6 className="mt-3">
-        Upload Document
-      </h6>
-
-      <input
-        type="file"
-        onChange={(e) =>
-          setSelectedFile(
-            e.target.files?.[0] || null
-          )
-        }
-      />
-
-      <button
-        className="btn btn-success mt-2"
-        onClick={handleUpload}
-      >
-        Upload
-      </button>
+        return ResponseEntity.ok(
+                expenseService.createExpense(
+                        travelId,
+                        employeeId,
+                        expenseTypeId,
+                        amount,
+                        comment,
+                        proofUrl,
+                        new Date()
+                ));
+    }
 
 
-      {/* ================= EXPENSES ================= */}
+    @PutMapping("/{id}/approve")
+    @PreAuthorize("hasRole('HR')")
+    public void approve(
+            @PathVariable Integer id,
+            @RequestParam Integer hrId){
 
-      <hr />
-
-      <div className="d-flex justify-content-between align-items-center">
-        <h5>Expenses</h5>
-
-        <button
-          className="btn btn-primary"
-          onClick={() =>
-            navigate(
-              `/app/travel/${travelId}/add-expense`
-            )
-          }
-        >
-          + Add Expense
-        </button>
-      </div>
+        expenseService.approveExpense(id,hrId);
+    }
 
 
-      {expenses.length === 0 &&
-        <p className="mt-2">
-          No expenses added yet.
-        </p>
-      }
+    @PutMapping("/{id}/reject")
+    @PreAuthorize("hasRole('HR')")
+    public void reject(
+            @PathVariable Integer id,
+            @RequestParam Integer hrId,
+            @RequestParam String remark){
 
-      <table className="table mt-3">
+        expenseService.rejectExpense(id,hrId,remark);
+    }
+}
 
-        <thead>
-          <tr>
-            <th>Type</th>
-            <th>Amount</th>
-            <th>Status</th>
-            <th>Proof</th>
-            <th>HR Remark</th>
-            <th>Action</th>
-          </tr>
-        </thead>
 
-        <tbody>
-
-          {expenses.map(e => (
-
-            <tr key={e.expenseId}>
-
-              <td>{e.expenseType}</td>
-
-              <td>₹ {e.amount}</td>
-
-              <td>{e.status}</td>
-
-              <td>
-                <a
-                  href={`http://localhost:8080/${e.proofUrl}`}
-                  target="_blank"
-                >
-                  View
-                </a>
-              </td>
-
-              <td>
-                {e.hrRemark ?? "-"}
-              </td>
-
-              <td>
-                {e.status === "DRAFT" && (
-                  <button
-                    className="btn btn-success btn-sm"
-                    onClick={() =>
-                      handleSubmitExpense(
-                        e.expenseId
-                      )
-                    }
-                  >
-                    Submit
-                  </button>
-                )}
-              </td>
-
-            </tr>
-
-          ))}
-
-        </tbody>
-
-      </table>
-
-    </div>
-  );
-};
-
-export default TravelDetail;
