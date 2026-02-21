@@ -1,59 +1,23 @@
-const [selectedFile, setSelectedFile] = useState<File | null>(null);
-const [uploading, setUploading] = useState(false);
-const [proofUrl, setProofUrl] = useState("");
+export const createExpense = async (data: {
+  travelId: number;
+  expenseTypeId: number;
+  amount: number;
+  proofUrl: string;
+  comment?: string;
+}) => {
 
-import {
-  createExpense,
-  uploadExpenseProof
-} from "../services/expenseService";
+  const params = new URLSearchParams();
 
-<input
-  type="file"
-  className="form-control mb-2"
-  onChange={(e)=>
-    setSelectedFile(e.target.files?.[0] || null)
-  }
-/>
+  params.append("travelId", data.travelId.toString());
+  params.append("expenseTypeId", data.expenseTypeId.toString());
+  params.append("amount", data.amount.toString());
+  params.append("proofUrl", data.proofUrl);
 
-const submitExpense = async () => {
+  if (data.comment)
+    params.append("comment", data.comment);
 
-  if (!selectedFile) {
-    alert("Please upload receipt");
-    return;
-  }
-
-  try {
-
-    setUploading(true);
-
-    const uploadedProofUrl =
-      await uploadExpenseProof(selectedFile);
-
-    await createExpense({
-      travelId: Number(travelId),
-      expenseTypeId: 1,
-      amount: Number(amount),
-      comment,
-      proofUrl: uploadedProofUrl
-    });
-
-    alert("Expense submitted");
-
-    navigate("/app/travel");
-
-  } catch (err) {
-    console.error(err);
-    alert("Failed to submit expense");
-  }
-  finally {
-    setUploading(false);
-  }
+  await axiosInstance.post(
+    "/api/expenses",
+    params
+  );
 };
-
-<button
-  className="btn btn-success"
-  onClick={submitExpense}
-  disabled={uploading}
->
-  {uploading ? "Submitting..." : "Submit Expense"}
-</button>
