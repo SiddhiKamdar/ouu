@@ -1,15 +1,122 @@
-const loadExpenses = async () => {
+import axiosInstance from "./axiosInstance";
 
-  if (user.role === "HR") {
-    await getAllExpenses();
-  }
-  else if (user.role === "MANAGER") {
-    await getTeamExpenses();
-  }
-  else {
-    await getMyExpenses();
-  }
+export interface ExpenseRequest {
+  travelId: number;
+  expenseTypeId: number;
+  amount: number;
+  comment?: string;
+  proofUrl: string;
+}
+
+export const createExpense = async (
+  data: ExpenseRequest
+) => {
+
+  const params = new URLSearchParams();
+
+  params.append("travelId", data.travelId.toString());
+  params.append("expenseTypeId", data.expenseTypeId.toString());
+  params.append("amount", data.amount.toString());
+  params.append("proofUrl", data.proofUrl);
+
+  if (data.comment)
+    params.append("comment", data.comment);
+
+  await axiosInstance.post(
+    "/api/expenses",
+    params
+  );
 };
+
+
+export const getMyExpenses = async () =>
+  (await axiosInstance.get("/api/expenses/my")).data;
+
+export const getAllExpenses = async () =>
+  (await axiosInstance.get("/api/expenses")).data;
+
+export const getTeamExpenses = async () =>
+  (await axiosInstance.get("/api/expenses/team")).data;
+
+
+
+import React, { useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { createExpense } from "../services/expenseService";
+
+const ExpenseCreate: React.FC = () => {
+
+  const { travelId } = useParams();
+  const navigate = useNavigate();
+
+  const [amount, setAmount] = useState("");
+  const [comment, setComment] = useState("");
+  const [proofUrl, setProofUrl] = useState("");
+
+  const submitExpense = async () => {
+
+    if (!proofUrl) {
+      alert("Proof required");
+      return;
+    }
+
+    await createExpense({
+      travelId: Number(travelId),
+      expenseTypeId: 1,
+      amount: Number(amount),
+      comment,
+      proofUrl
+    });
+
+    alert("Expense submitted");
+
+    navigate("/app/travel");
+  };
+
+  return (
+    <div className="card p-4 shadow-sm">
+
+      <h4>Add Expense</h4>
+
+      <input
+        className="form-control mb-2"
+        placeholder="Amount"
+        type="number"
+        onChange={(e)=>setAmount(e.target.value)}
+      />
+
+      <textarea
+        className="form-control mb-2"
+        placeholder="Comment"
+        onChange={(e)=>setComment(e.target.value)}
+      />
+
+      <input
+        className="form-control mb-2"
+        placeholder="Proof URL"
+        onChange={(e)=>setProofUrl(e.target.value)}
+      />
+
+      <button
+        className="btn btn-success"
+        onClick={submitExpense}
+      >
+        Submit Expense
+      </button>
+
+    </div>
+  );
+};
+
+export default ExpenseCreate;
+
+
+
+<Route
+  path="/app/expense/create/:travelId"
+  element={<ExpenseCreate />}
+/>
+
 
 {canSubmitExpense && (
   <button
@@ -21,7 +128,3 @@ const loadExpenses = async () => {
     + Add Expense
   </button>
 )}
-
-console.log("Travel Employees:", data.employeeIds);
-console.log("Logged User:", user.employeeId);
-console.log("Role:", user.role);
