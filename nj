@@ -1,253 +1,30 @@
-package com.example.backend.service;
+public List<ExpensesDetail> getTeamExpenses(){
 
-import com.example.backend.entity.*;
-import com.example.backend.repository.*;
+    Employee manager = getLoggedInEmployee();
 
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
-import org.springframework.security.core.context.SecurityContextHolder;
+    List<Employee> teamMembers =
+            employeeRepository.findBySupervisor(manager);
 
-import java.math.BigDecimal;
-import java.util.Date;
-import java.util.List;
+    List<Integer> teamIds =
+            teamMembers.stream()
+                    .map(Employee::getEmployeeId)
+                    .toList();
 
-@Service
-public class ExpenseService {
-
-    @Autowired
-    private ExpensesRepository expenseRepo;
-
-    @Autowired
-    private TravelModuleRepository travelRepo;
-
-    @Autowired
-    private EmployeeRepository employeeRepository;
-
-    @Autowired
-    private ExpensesReviewRepository reviewRepo;
-
-    @Autowired
-    private ApprovalStatusRepository statusRepo;
-
-
-
-    public ExpensesDetail createExpense(
-            Integer travelId,
-            Integer expenseTypeId,
-            BigDecimal amount,
-            String comment,
-            String proofUrl){
-
-        if(proofUrl == null || proofUrl.isEmpty())
-            throw new RuntimeException("Proof required");
-
-        Travel travel =
-                travelRepo.findById(travelId.longValue())
-                        .orElseThrow();
-
-        Date today = new Date();
-
-        if(today.before(travel.getDepartDate()))
-            throw new RuntimeException(
-                    "Expense not allowed before travel start");
-
-        long diff =
-                today.getTime()
-                        - travel.getReturnDate().getTime();
-
-        long days = diff/(1000*60*60*24);
-
-        if(days > 10)
-            throw new RuntimeException(
-                    "Expense submission window closed");
-
-        Employee employee = getLoggedInEmployee();
-
-        ExpensesDetail expense = new ExpensesDetail();
-        expense.setTravel(travel);
-        expense.setEmployee(employee);
-        expense.setAmount(amount);
-        expense.setComment(comment);
-        expense.setProofUrl(proofUrl);
-        expense.setUploadDate(today);
-        expense.setExpenseDate(today);
-
-        return expenseRepo.save(expense);
-    }
-
-
-
-    public void approveExpense(
-            Integer expenseId,
-            Integer hrId){
-
-        saveReview(expenseId,hrId,2,null);
-    }
-
-
-
-    public void rejectExpense(
-            Integer expenseId,
-            Integer hrId,
-            String remark){
-
-        if(remark==null || remark.isEmpty())
-            throw new RuntimeException("Remark required");
-
-        saveReview(expenseId,hrId,3,remark);
-    }
-
-
-
-    private void saveReview(
-            Integer expenseId,
-            Integer hrId,
-            Integer statusId,
-            String comment){
-
-        ExpensesDetail expense =
-                expenseRepo.findById(expenseId)
-                        .orElseThrow();
-
-        Employee reviewer =
-                employeeRepository
-                        .findById(hrId.longValue())
-                        .orElseThrow();
-
-        ApprovalStatus status =
-                statusRepo.findById(statusId)
-                        .orElseThrow();
-
-        ExpensesReview review = new ExpensesReview();
-        review.setExpense(expense);
-        review.setReviewedBy(reviewer);
-        review.setStatus(status);
-        review.setComment(comment);
-
-        reviewRepo.save(review);
-    }
-
-
-
-    private Employee getLoggedInEmployee(){
-
-        String email =
-                SecurityContextHolder
-                        .getContext()
-                        .getAuthentication()
-                        .getName();
-
-        return employeeRepository
-                .findByEmail(email)
-                .orElseThrow();
-    }
-
-
-
-    public List<ExpensesDetail> getMyExpenses(){
-
-        Employee emp = getLoggedInEmployee();
-
-        return expenseRepo
-                .findByEmployeeEmployeeId(
-                        emp.getEmployeeId());
-    }
-
-
-
-    public List<ExpensesDetail> getAllExpenses(){
-        return expenseRepo.findAll();
-    }
+    return expenseRepo.findAll()
+            .stream()
+            .filter(exp ->
+                    teamIds.contains(
+                            exp.getEmployee()
+                                    .getEmployeeId()))
+            .toList();
 }
 
+@GetMapping("/team")
+@PreAuthorize("hasRole('MANAGER')")
+public ResponseEntity<List<ExpensesDetail>>
+teamExpenses(){
 
-package com.example.backend.controller;
-
-import com.example.backend.entity.ExpensesDetail;
-import com.example.backend.service.ExpenseService;
-
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.*;
-
-import java.math.BigDecimal;
-import java.util.List;
-
-@RestController
-@RequestMapping("/api/expenses")
-public class ExpenseController {
-
-    @Autowired
-    private ExpenseService expenseService;
-
-
-
-    @PostMapping
-    @PreAuthorize(
-    "hasAnyRole('EMPLOYEE','HR','MANAGER')")
-    public ResponseEntity<ExpensesDetail> createExpense(
-            @RequestParam Integer travelId,
-            @RequestParam Integer expenseTypeId,
-            @RequestParam BigDecimal amount,
-            @RequestParam String proofUrl,
-            @RequestParam(required=false)
-            String comment){
-
-        return ResponseEntity.ok(
-                expenseService.createExpense(
-                        travelId,
-                        expenseTypeId,
-                        amount,
-                        comment,
-                        proofUrl
-                ));
-    }
-
-
-
-    @GetMapping("/my")
-    @PreAuthorize(
-    "hasAnyRole('EMPLOYEE','HR','MANAGER')")
-    public ResponseEntity<List<ExpensesDetail>>
-    myExpenses(){
-
-        return ResponseEntity.ok(
-                expenseService.getMyExpenses());
-    }
-
-
-
-    @GetMapping
-    @PreAuthorize("hasRole('HR')")
-    public ResponseEntity<List<ExpensesDetail>>
-    allExpenses(){
-
-        return ResponseEntity.ok(
-                expenseService.getAllExpenses());
-    }
-
-
-
-    @PutMapping("/{id}/approve")
-    @PreAuthorize("hasRole('HR')")
-    public void approve(
-            @PathVariable Integer id,
-            @RequestParam Integer hrId){
-
-        expenseService.approveExpense(id,hrId);
-    }
-
-
-
-    @PutMapping("/{id}/reject")
-    @PreAuthorize("hasRole('HR')")
-    public void reject(
-            @PathVariable Integer id,
-            @RequestParam Integer hrId,
-            @RequestParam String remark){
-
-        expenseService.rejectExpense(
-                id,hrId,remark);
-    }
+    return ResponseEntity.ok(
+            expenseService.getTeamExpenses());
 }
+
