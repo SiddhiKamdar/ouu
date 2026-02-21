@@ -1,98 +1,297 @@
-package com.example.backend.repository;
+package com.example.backend.config;
 
-import com.example.backend.entity.ApprovalStatus;
-import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.stereotype.Repository;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+import org.springframework.beans.factory.annotation.Value;
 
-@Repository
-public interface ApprovalStatusRepository
-        extends JpaRepository<ApprovalStatus, Integer> {
-}
+@Configuration
+public class FileUploadConfig implements WebMvcConfigurer {
 
-package com.example.backend.entity;
+    @Value("${file.upload.base-dir}")
+    private String baseDir;
 
-import jakarta.persistence.*;
+    @Override
+    public void addResourceHandlers(ResourceHandlerRegistry registry) {
 
-@Entity
-@Table(name = "approval_statuses")
-public class ApprovalStatus {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "approval_status_id")
-    private Integer approvalStatusId;
-
-    @Column(name = "approval_status_name")
-    private String approvalStatusName;
-
-    public Integer getApprovalStatusId() {
-        return approvalStatusId;
-    }
-
-    public void setApprovalStatusId(Integer approvalStatusId) {
-        this.approvalStatusId = approvalStatusId;
-    }
-
-    public String getApprovalStatusName() {
-        return approvalStatusName;
-    }
-
-    public void setApprovalStatusName(String approvalStatusName) {
-        this.approvalStatusName = approvalStatusName;
+        registry.addResourceHandler("/uploads/**")
+                .addResourceLocations("file:" + baseDir);
     }
 }
 
+package com.example.backend.service;
 
-@RestController
-@RequestMapping("/api/expenses")
-public class ExpenseController {
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.File;
+import java.util.UUID;
+
+@Service
+public class ExpenseProofService {
+
+    @Value("${file.upload.base-dir}")
+    private String baseDir;
+
+    public String uploadProof(MultipartFile file) {
+
+        try {
+
+            String folderPath =
+                    baseDir + File.separator + "expense-proofs";
+
+            File directory = new File(folderPath);
+
+            if (!directory.exists())
+                directory.mkdirs();
+
+            String fileName =
+                    UUID.randomUUID() + "_" +
+                    file.getOriginalFilename();
+
+            String fullPath =
+                    folderPath + File.separator + fileName;
+
+            file.transferTo(new File(fullPath));
+
+            // URL accessible path
+            return "uploads/expense-proofs/" + fileName;
+
+        } catch (Exception e) {
+            throw new RuntimeException(
+                    "Expense proof upload failed");
+        }
+    }
+}
+
+@Autowired
+private ExpenseProofService proofService;
+
+
+@PostMapping(
+        value="/upload-proof",
+        consumes = MediaType.MULTIPART_FORM_DATA_VALUE
+)
+@PreAuthorize("hasRole('EMPLOYEE')")
+public ResponseEntity<String> uploadProof(
+        @RequestParam MultipartFile file){
+
+    String path = proofService.uploadProof(file);
+
+    return ResponseEntity.ok(path);
+}
+
+
+package com.example.backend.service;
+
+import com.example.backend.dto.response.TravelDocumentResponseDTO;
+import com.example.backend.entity.*;
+import com.example.backend.repository.*;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
+
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+
+import java.io.File;
+import java.util.Date;
+import java.util.List;
+import java.util.UUID;
+
+@Service
+public class TravelDocumentService {
+
+    // ✅ NEW BASE DIRECTORY
+    @Value("${file.upload.base-dir}")
+    private String baseDir;
 
     @Autowired
-    private ExpenseService expenseService;
+    private TravelDocumentRepository travelDocumentRepository;
+
+    @Autowired
+    private TravelModuleRepository travelRepository;
+
+    @Autowired
+    private EmployeeRepository employeeRepository;
+
+    @Autowired
+    private DocumentTypeRepository documentTypeRepository;
 
 
-    @PostMapping
-    @PreAuthorize("hasRole('EMPLOYEE')")
-    public ResponseEntity<?> create(
-            @RequestParam Integer travelId,
-            @RequestParam Integer employeeId,
-            @RequestParam Integer expenseTypeId,
-            @RequestParam BigDecimal amount,
-            @RequestParam String proofUrl,
-            @RequestParam(required=false)
-            String comment){
+    // ================= UPLOAD DOCUMENT =================
+    public void uploadDocument(
+            MultipartFile file,
+            int travelId,
+            int uploadedById,
+            Integer employeeId,
+            int documentTypeId
+    ) {
 
-        return ResponseEntity.ok(
-                expenseService.createExpense(
-                        travelId,
-                        employeeId,
-                        expenseTypeId,
-                        amount,
-                        comment,
-                        proofUrl,
-                        new Date()
-                ));
+        try {
+
+            // ✅ travel-documents folder
+            String folderPath =
+                    baseDir + File.separator + "travel-documents";
+
+            File directory = new File(folderPath);
+
+            if (!directory.exists())
+                directory.mkdirs();
+
+
+            String fileName =
+                    UUID.randomUUID() + "_" +
+                            file.getOriginalFilename();
+
+            String fullPath =
+                    folderPath + File.separator + fileName;
+
+            file.transferTo(new File(fullPath));
+
+
+            Travel travel = travelRepository.findById((long) travelId)
+                    .orElseThrow(() ->
+                            new RuntimeException("Travel not found"));
+
+            Employee uploadedBy =
+                    employeeRepository.findById((long) uploadedById)
+                            .orElseThrow(() ->
+                                    new RuntimeException("Uploader not found"));
+
+            DocumentType documentType =
+                    documentTypeRepository.findById(documentTypeId)
+                            .orElseThrow(() ->
+                                    new RuntimeException("Document type not found"));
+
+
+            // ✅ PUBLIC URL PATH
+            String dbPath =
+                    "uploads/travel-documents/" + fileName;
+
+
+            TravelDocument document = new TravelDocument();
+            document.setTravel(travel);
+            document.setUploadedBy(uploadedBy);
+            document.setDocumentType(documentType);
+            document.setDocumentUrl(dbPath);
+            document.setUploadedDate(new Date());
+            document.setDeleted(false);
+
+
+            if (employeeId != null) {
+
+                Employee employee =
+                        employeeRepository.findById((long) employeeId)
+                                .orElseThrow(() ->
+                                        new RuntimeException("Employee not found"));
+
+                document.setEmployee(employee);
+            }
+
+            travelDocumentRepository.save(document);
+
+        }
+        catch (Exception e) {
+            e.printStackTrace();
+            throw new RuntimeException(
+                    "File upload failed : " + e.getMessage());
+        }
     }
 
 
-    @PutMapping("/{id}/approve")
-    @PreAuthorize("hasRole('HR')")
-    public void approve(
-            @PathVariable Integer id,
-            @RequestParam Integer hrId){
+    // ================= GET DOCUMENTS =================
+    public List<TravelDocumentResponseDTO>
+    getDocumentsByTravel(int travelId) {
 
-        expenseService.approveExpense(id,hrId);
-    }
+        Authentication authentication =
+                SecurityContextHolder.getContext().getAuthentication();
+
+        String email = authentication.getName();
+        String role =
+                authentication.getAuthorities()
+                        .iterator()
+                        .next()
+                        .getAuthority();
+
+        Employee loggedInUser =
+                employeeRepository.findByEmail(email)
+                        .orElseThrow(() ->
+                                new RuntimeException("User not found"));
+
+        List<TravelDocument> documents;
 
 
-    @PutMapping("/{id}/reject")
-    @PreAuthorize("hasRole('HR')")
-    public void reject(
-            @PathVariable Integer id,
-            @RequestParam Integer hrId,
-            @RequestParam String remark){
+        // -------- HR --------
+        if (role.equals("ROLE_HR")) {
 
-        expenseService.rejectExpense(id,hrId,remark);
+            documents =
+                    travelDocumentRepository
+                            .findByTravel_TravelId(travelId);
+        }
+
+        // -------- MANAGER --------
+        else if (role.equals("ROLE_MANAGER")) {
+
+            List<Employee> teamMembers =
+                    employeeRepository.findBySupervisor(loggedInUser);
+
+            List<Integer> teamIds =
+                    teamMembers.stream()
+                            .map(Employee::getEmployeeId)
+                            .toList();
+
+            documents =
+                    travelDocumentRepository
+                            .findByTravel_TravelId(travelId)
+                            .stream()
+                            .filter(doc -> {
+                                if (doc.getEmployee() == null)
+                                    return true;
+
+                                return teamIds.contains(
+                                        doc.getEmployee()
+                                                .getEmployeeId());
+                            })
+                            .toList();
+        }
+
+        // -------- EMPLOYEE --------
+        else {
+
+            documents =
+                    travelDocumentRepository
+                            .findByTravel_TravelId(travelId)
+                            .stream()
+                            .filter(doc -> {
+
+                                if (doc.getEmployee() == null)
+                                    return true;
+
+                                return doc.getEmployee()
+                                        .getEmployeeId()
+                                        ==
+                                        loggedInUser.getEmployeeId();
+                            })
+                            .toList();
+        }
+
+
+        return documents.stream()
+                .map(doc ->
+                        new TravelDocumentResponseDTO(
+                                doc.getId(),
+                                doc.getDocumentUrl(),
+                                doc.getUploadedDate(),
+                                doc.getUploadedBy() != null
+                                        ? doc.getUploadedBy().getFullName()
+                                        : "System"
+                        ))
+                .toList();
     }
 }
+
 
