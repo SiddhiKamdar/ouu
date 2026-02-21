@@ -1,72 +1,19 @@
-@PostMapping(
-        value = "",
-        consumes = "multipart/form-data"
-)
-@PreAuthorize("hasAnyRole('EMPLOYEE','HR','MANAGER')")
-public ResponseEntity<ExpensesDetail> createExpense(
+public ResponseEntity<ExpenseResponseDTO> createExpense(
+        @RequestBody ExpenseCreateRequestDTO request){
 
-        @RequestParam Integer travelId,
-        @RequestParam Integer expenseTypeId,
-        @RequestParam BigDecimal amount,
-        @RequestParam(required = false) String comment,
-        @RequestParam("file") MultipartFile file
-) {
-
-    String proofUrl =
-            expenseProofService.uploadProof(file);
-
-    return ResponseEntity.ok(
+    ExpensesDetail expense =
             expenseService.createExpense(
-                    travelId,
-                    expenseTypeId,
-                    amount,
-                    comment,
-                    proofUrl
-            ));
+                    request.getTravelId(),
+                    request.getExpenseTypeId(),
+                    request.getAmount(),
+                    request.getComment(),
+                    request.getProofUrl()
+            );
+
+    ExpenseResponseDTO response =
+            expenseService.mapExpense(expense);
+
+    return ResponseEntity.ok(response);
 }
 
-export const createExpense = async (
-  travelId: number,
-  amount: number,
-  comment: string,
-  file: File
-) => {
 
-  const formData = new FormData();
-
-  formData.append("travelId", travelId.toString());
-  formData.append("expenseTypeId", "1");
-  formData.append("amount", amount.toString());
-  formData.append("comment", comment);
-  formData.append("file", file);
-
-  await axiosInstance.post(
-    "/api/expenses",
-    formData,
-    {
-      headers: {
-        "Content-Type": "multipart/form-data"
-      }
-    }
-  );
-};
-
-
-
-const submitExpense = async () => {
-
-  if (!selectedFile) {
-    alert("Upload receipt");
-    return;
-  }
-
-  await createExpense(
-    Number(travelId),
-    Number(amount),
-    comment,
-    selectedFile
-  );
-
-  alert("Expense submitted");
-  navigate("/app/travel");
-};
