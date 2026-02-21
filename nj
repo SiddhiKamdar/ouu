@@ -1,183 +1,3 @@
-import axiosInstance from "./axiosInstance";
-
-export interface Expense {
-  expenseId: number;
-  employeeName: string;
-  destination: string;
-  amount: number;
-  status: string;
-  remark?: string;
-  expenseDate: string;
-  proofUrl: string;
-}
-
-export const uploadExpenseProof = async (
-  file: File
-): Promise<string> => {
-
-  const formData = new FormData();
-  formData.append("file", file);
-
-  const response = await axiosInstance.post(
-    "/api/expenses/upload-proof",
-    formData,
-    { headers: { "Content-Type": "multipart/form-data" } }
-  );
-
-  return response.data;
-};
-
-export const createExpense = async (data: {
-  travelId: number;
-  expenseTypeId: number;
-  amount: number;
-  proofUrl: string;
-  comment?: string;
-}) => {
-
-  await axiosInstance.post("/api/expenses", data);
-};
-
-export const getMyExpenses = async (): Promise<Expense[]> => {
-
-  const response =
-    await axiosInstance.get("/api/expenses/my");
-
-  return response.data;
-};
-
-import React, { useEffect, useState } from "react";
-import {
-  uploadExpenseProof,
-  createExpense,
-  getMyExpenses,
-  Expense
-} from "../services/expenseService";
-
-interface Props {
-  travelId: string;
-}
-
-const ExpenseSection: React.FC<Props> = ({ travelId }) => {
-
-  const [file,setFile]=useState<File|null>(null);
-  const [amount,setAmount]=useState("");
-  const [comment,setComment]=useState("");
-  const [expenses,setExpenses]=useState<Expense[]>([]);
-  const [loading,setLoading]=useState(false);
-
-  useEffect(()=>{
-    loadExpenses();
-  },[]);
-
-  const loadExpenses=async()=>{
-    const data=await getMyExpenses();
-    setExpenses(data);
-  };
-
-  const handleSubmit=async()=>{
-
-    if(!file || !amount) return;
-
-    setLoading(true);
-
-    const proofUrl=
-      await uploadExpenseProof(file);
-
-    await createExpense({
-      travelId:Number(travelId),
-      expenseTypeId:1,
-      amount:Number(amount),
-      proofUrl,
-      comment
-    });
-
-    setFile(null);
-    setAmount("");
-    setComment("");
-
-    await loadExpenses();
-
-    setLoading(false);
-  };
-
-  return(
-
-    <div>
-
-      <h5>Add Expense</h5>
-
-      <input
-        type="number"
-        className="form-control mb-2"
-        placeholder="Amount"
-        value={amount}
-        onChange={e=>setAmount(e.target.value)}
-      />
-
-      <textarea
-        className="form-control mb-2"
-        placeholder="Comment"
-        value={comment}
-        onChange={e=>setComment(e.target.value)}
-      />
-
-      <input
-        type="file"
-        className="form-control mb-2"
-        onChange={e=>
-          setFile(e.target.files?.[0]||null)}
-      />
-
-      <button
-        className="btn btn-success"
-        disabled={loading}
-        onClick={handleSubmit}
-      >
-        Submit Expense
-      </button>
-
-      <hr/>
-
-      <h5>My Expenses</h5>
-
-      {expenses.map(exp=>(
-        <div
-          key={exp.expenseId}
-          className="border rounded p-2 mb-2"
-        >
-
-          <div>
-            <strong>Amount:</strong> {exp.amount}
-          </div>
-
-          <div>
-            <strong>Status:</strong> {exp.status}
-          </div>
-
-          {exp.remark && (
-            <div>
-              <strong>Remark:</strong> {exp.remark}
-            </div>
-          )}
-
-          <a
-            href={`http://localhost:8080/${exp.proofUrl}`}
-            target="_blank"
-          >
-            View Proof
-          </a>
-
-        </div>
-      ))}
-
-    </div>
-  );
-};
-
-export default ExpenseSection;
-
-
 import React, { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 
@@ -194,24 +14,31 @@ import {
 
 import ExpenseSection from "../components/ExpenseSection";
 
-const TravelDetail:React.FC=()=>{
+const TravelDetail: React.FC = () => {
 
-  const {travelId}=useParams();
-  const user=
-    JSON.parse(localStorage.getItem("user")||"{}");
+  const { travelId } = useParams();
 
-  const [travel,setTravel]=
-    useState<Travel|null>(null);
+  const user =
+    JSON.parse(localStorage.getItem("user") || "{}");
 
-  const [documents,setDocuments]=
+  const [travel,setTravel] =
+    useState<Travel | null>(null);
+
+  const [documents,setDocuments] =
     useState<TravelDocument[]>([]);
 
-  const [file,setFile]=
+  const [file,setFile] =
     useState<File|null>(null);
 
-  const [activeTab,setActiveTab]=
+  const [activeTab,setActiveTab] =
     useState<"documents"|"expenses">
     ("documents");
+
+  const [canSubmitExpense,
+    setCanSubmitExpense] =
+    useState(false);
+
+
 
   useEffect(()=>{
     if(travelId){
@@ -220,19 +47,36 @@ const TravelDetail:React.FC=()=>{
     }
   },[]);
 
-  const loadTravel=async()=>{
-    const data=
+
+
+  const loadTravel = async () => {
+
+    const data =
       await getTravelById(travelId!);
+
     setTravel(data);
+
+    const assigned =
+      data.employeeIds?.includes(
+        user.employeeId
+      );
+
+    setCanSubmitExpense(assigned);
   };
 
-  const loadDocuments=async()=>{
-    const data=
+
+
+  const loadDocuments = async () => {
+
+    const data =
       await getDocumentsByTravel(travelId!);
+
     setDocuments(data);
   };
 
-  const handleUpload=async()=>{
+
+
+  const handleUpload = async () => {
 
     if(!file) return;
 
@@ -246,12 +90,18 @@ const TravelDetail:React.FC=()=>{
     );
 
     setFile(null);
+
     loadDocuments();
   };
 
-  if(!travel) return<div>Loading...</div>;
 
-  return(
+
+  if(!travel)
+    return <div>Loading...</div>;
+
+
+
+  return (
 
     <div className="card p-4 shadow-sm">
 
@@ -267,6 +117,20 @@ const TravelDetail:React.FC=()=>{
         {travel.employeeNames?.join(", ")}
       </p>
 
+      <p>
+        <strong>Departure:</strong>
+        {new Date(
+          travel.departDate
+        ).toLocaleDateString()}
+      </p>
+
+      <p>
+        <strong>Return:</strong>
+        {new Date(
+          travel.returnDate
+        ).toLocaleDateString()}
+      </p>
+
       <hr/>
 
       <div className="mb-3">
@@ -274,28 +138,36 @@ const TravelDetail:React.FC=()=>{
         <button
           className={`btn me-2 ${
             activeTab==="documents"
-            ?"btn-success"
-            :"btn-outline-success"
+              ?"btn-success"
+              :"btn-outline-success"
           }`}
-          onClick={()=>setActiveTab("documents")}
+          onClick={()=>
+            setActiveTab("documents")}
         >
           Documents
         </button>
 
-        <button
-          className={`btn ${
-            activeTab==="expenses"
-            ?"btn-success"
-            :"btn-outline-success"
-          }`}
-          onClick={()=>setActiveTab("expenses")}
-        >
-          Expenses
-        </button>
+        {canSubmitExpense && (
+
+          <button
+            className={`btn ${
+              activeTab==="expenses"
+                ?"btn-success"
+                :"btn-outline-success"
+            }`}
+            onClick={()=>
+              setActiveTab("expenses")}
+          >
+            Expenses
+          </button>
+
+        )}
 
       </div>
 
-      {activeTab==="documents"&&(
+
+
+      {activeTab==="documents" && (
 
         <div>
 
@@ -303,10 +175,13 @@ const TravelDetail:React.FC=()=>{
             {documents.map(doc=>(
               <li key={doc.id}>
                 <a
-                 href={`http://localhost:8080/${doc.documentUrl}`}
-                 target="_blank"
+                  href={`http://localhost:8080/${doc.documentUrl}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
                 >
-                 {doc.documentUrl.split(/[/\\]/).pop()}
+                  {doc.documentUrl
+                    .split(/[/\\]/)
+                    .pop()}
                 </a>
               </li>
             ))}
@@ -316,7 +191,8 @@ const TravelDetail:React.FC=()=>{
             type="file"
             onChange={e=>
               setFile(
-                e.target.files?.[0]||null)}
+                e.target.files?.[0]||null
+              )}
           />
 
           <button
@@ -327,12 +203,18 @@ const TravelDetail:React.FC=()=>{
           </button>
 
         </div>
+
       )}
 
-      {activeTab==="expenses"&&(
+
+
+      {activeTab==="expenses"
+        && canSubmitExpense && (
+
         <ExpenseSection
           travelId={travelId!}
         />
+
       )}
 
     </div>
@@ -342,4 +224,11 @@ const TravelDetail:React.FC=()=>{
 export default TravelDetail;
 
 
-
+export interface Travel {
+  travelId: number;
+  employeeNames: string[];
+  employeeIds: number[];
+  destination: string;
+  departDate: string;
+  returnDate: string;
+}
