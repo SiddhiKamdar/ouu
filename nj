@@ -1,35 +1,59 @@
-export const uploadExpenseProof = async (
-  file: File
-): Promise<string> => {
+const [selectedFile, setSelectedFile] = useState<File | null>(null);
+const [uploading, setUploading] = useState(false);
+const [proofUrl, setProofUrl] = useState("");
 
-  const formData = new FormData();
-  formData.append("file", file);
+import {
+  createExpense,
+  uploadExpenseProof
+} from "../services/expenseService";
 
-  const response = await axiosInstance.post(
-    "/api/expenses/upload-proof",
-    formData,
-    {
-      headers: {
-        "Content-Type": "multipart/form-data"
-      }
-    }
-  );
+<input
+  type="file"
+  className="form-control mb-2"
+  onChange={(e)=>
+    setSelectedFile(e.target.files?.[0] || null)
+  }
+/>
 
-  return response.data;
+const submitExpense = async () => {
+
+  if (!selectedFile) {
+    alert("Please upload receipt");
+    return;
+  }
+
+  try {
+
+    setUploading(true);
+
+    const uploadedProofUrl =
+      await uploadExpenseProof(selectedFile);
+
+    await createExpense({
+      travelId: Number(travelId),
+      expenseTypeId: 1,
+      amount: Number(amount),
+      comment,
+      proofUrl: uploadedProofUrl
+    });
+
+    alert("Expense submitted");
+
+    navigate("/app/travel");
+
+  } catch (err) {
+    console.error(err);
+    alert("Failed to submit expense");
+  }
+  finally {
+    setUploading(false);
+  }
 };
 
-
-@Autowired
-    private ExpenseProofService expenseProofService;
-
-@PostMapping("/upload-proof")
-    @PreAuthorize("hasAnyRole('EMPLOYEE','HR','MANAGER')")
-    public ResponseEntity<String> uploadProof(
-            @RequestParam("file") MultipartFile file) {
-
-        String proofUrl =
-                expenseProofService.uploadProof(file);
-
-        return ResponseEntity.ok(proofUrl);
-    }
-
+<button
+  className="btn btn-success"
+  onClick={submitExpense}
+  disabled={uploading}
+>
+  {uploading ? "Submitting..." : "Submit Expense"}
+</button>
