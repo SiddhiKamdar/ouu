@@ -1,174 +1,76 @@
-package com.example.backend.dto.response;
+spring.mail.host=smtp.gmail.com
+spring.mail.port=587
+spring.mail.username=yourmail@gmail.com
+spring.mail.password=your-app-password
+spring.mail.properties.mail.smtp.auth=true
+spring.mail.properties.mail.smtp.starttls.enable=true
 
-import java.math.BigDecimal;
-import java.util.Date;
+package com.example.backend.service;
 
-public class ExpenseResponseDTO {
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.stereotype.Service;
 
-    private Integer expenseId;
-    private String employeeName;
-    private String destination;
-    private BigDecimal amount;
-    private String status;
-    private String remark;
-    private Date expenseDate;
-    private String proofUrl;
+@Service
+public class EmailService {
 
-    public ExpenseResponseDTO(
-            Integer expenseId,
-            String employeeName,
-            String destination,
-            BigDecimal amount,
-            String status,
-            String remark,
-            Date expenseDate,
-            String proofUrl) {
+    @Autowired
+    private JavaMailSender mailSender;
 
-        this.expenseId = expenseId;
-        this.employeeName = employeeName;
-        this.destination = destination;
-        this.amount = amount;
-        this.status = status;
-        this.remark = remark;
-        this.expenseDate = expenseDate;
-        this.proofUrl = proofUrl;
+    public void sendMail(
+            String to,
+            String subject,
+            String body){
+
+        SimpleMailMessage message =
+                new SimpleMailMessage();
+
+        message.setTo(to);
+        message.setSubject(subject);
+        message.setText(body);
+
+        mailSender.send(message);
     }
-
-    public Integer getExpenseId() { return expenseId; }
-    public String getEmployeeName() { return employeeName; }
-    public String getDestination() { return destination; }
-    public BigDecimal getAmount() { return amount; }
-    public String getStatus() { return status; }
-    public String getRemark() { return remark; }
-    public Date getExpenseDate() { return expenseDate; }
-    public String getProofUrl() { return proofUrl; }
 }
 
+@Autowired
+private EmailService emailService;
 
-
-private ExpenseResponseDTO mapExpense(ExpensesDetail expense){
-
-    ExpensesReview review =
-            reviewRepo
-            .findTopByExpenseExpenseIdOrderByTimestampDesc(
-                    expense.getExpenseId());
-
-    String status =
-            review!=null
-            ? review.getStatus()
-                    .getApprovalStatusName()
-            : "SUBMITTED";
-
-    String remark =
-            review!=null
-            ? review.getComment()
-            : null;
-
-    return new ExpenseResponseDTO(
-            expense.getExpenseId(),
-            expense.getEmployee().getFullName(),
-            expense.getTravel().getDestination(),
-            expense.getAmount(),
-            status,
-            remark,
-            expense.getExpenseDate(),
-            expense.getProofUrl()
-    );
-}
-
-
-public List<ExpenseResponseDTO> getMyExpenses(){
-
-    Employee emp = getLoggedInEmployee();
-
-    return expenseRepo
-            .findByEmployeeEmployeeId(
-                    emp.getEmployeeId())
-            .stream()
-            .map(this::mapExpense)
-            .toList();
-}
-
-
-public List<ExpenseResponseDTO> getAllExpenses(){
-
-    return expenseRepo.findAll()
-            .stream()
-            .map(this::mapExpense)
-            .toList();
-}
-
-
-public List<ExpenseResponseDTO> getTeamExpenses(){
-
-    Employee manager = getLoggedInEmployee();
-
-    List<Employee> team =
-            employeeRepository
-            .findBySupervisor(manager);
-
-    List<Integer> ids =
-            team.stream()
-            .map(Employee::getEmployeeId)
-            .toList();
-
-    return expenseRepo.findAll()
-            .stream()
-            .filter(e ->
-                    ids.contains(
-                    e.getEmployee()
-                     .getEmployeeId()))
-            .map(this::mapExpense)
-            .toList();
-}
+employeeRepository.findAll()
+        .stream()
+        .filter(e ->
+                e.getRole()
+                 .getRoleName()
+                 .equals("HR"))
+        .forEach(hr ->
+                emailService.sendMail(
+                        hr.getEmail(),
+                        "New Expense Submitted",
+                        "Expense submitted by "
+                        + employee.getFullName()
+                        + " for travel "
+                        + travel.getDestination()
+                ));
 
 
 
 
-@GetMapping("/my")
-@PreAuthorize(
-"hasAnyRole('EMPLOYEE','HR','MANAGER')")
-public ResponseEntity<List<ExpenseResponseDTO>>
-myExpenses(){
+Employee expenseOwner =
+        expense.getEmployee();
 
-    return ResponseEntity.ok(
-            expenseService.getMyExpenses());
-}
+String statusName =
+        status.getApprovalStatusName();
 
-@GetMapping
-@PreAuthorize("hasRole('HR')")
-public ResponseEntity<List<ExpenseResponseDTO>>
-allExpenses(){
+emailService.sendMail(
+        expenseOwner.getEmail(),
+        "Expense Status Updated",
+        "Your expense is "
+        + statusName
+        + (comment!=null
+           ? "\nRemark: "+comment
+           : "")
+);
 
-    return ResponseEntity.ok(
-            expenseService.getAllExpenses());
-}
 
-@GetMapping("/team")
-@PreAuthorize("hasRole('MANAGER')")
-public ResponseEntity<List<ExpenseResponseDTO>>
-teamExpenses(){
-
-    return ResponseEntity.ok(
-            expenseService.getTeamExpenses());
-}
-
-public Double getTotalByTravel(Integer travelId){
-
-    return expenseRepo
-            .findByTravelTravelId(travelId)
-            .stream()
-            .map(e -> e.getAmount().doubleValue())
-            .reduce(0.0, Double::sum);
-}
-
-@GetMapping("/travel-total/{travelId}")
-@PreAuthorize(
-"hasAnyRole('EMPLOYEE','HR','MANAGER')")
-public Double total(
-        @PathVariable Integer travelId){
-
-    return expenseService
-            .getTotalByTravel(travelId);
-}
 
