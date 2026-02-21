@@ -1,12 +1,47 @@
-export const uploadExpenseProof = async (
+@PostMapping(
+        value = "",
+        consumes = "multipart/form-data"
+)
+@PreAuthorize("hasAnyRole('EMPLOYEE','HR','MANAGER')")
+public ResponseEntity<ExpensesDetail> createExpense(
+
+        @RequestParam Integer travelId,
+        @RequestParam Integer expenseTypeId,
+        @RequestParam BigDecimal amount,
+        @RequestParam(required = false) String comment,
+        @RequestParam("file") MultipartFile file
+) {
+
+    String proofUrl =
+            expenseProofService.uploadProof(file);
+
+    return ResponseEntity.ok(
+            expenseService.createExpense(
+                    travelId,
+                    expenseTypeId,
+                    amount,
+                    comment,
+                    proofUrl
+            ));
+}
+
+export const createExpense = async (
+  travelId: number,
+  amount: number,
+  comment: string,
   file: File
-): Promise<string> => {
+) => {
 
   const formData = new FormData();
+
+  formData.append("travelId", travelId.toString());
+  formData.append("expenseTypeId", "1");
+  formData.append("amount", amount.toString());
+  formData.append("comment", comment);
   formData.append("file", file);
 
-  const response = await axiosInstance.post(
-    "/api/expenses/upload-proof",
+  await axiosInstance.post(
+    "/api/expenses",
     formData,
     {
       headers: {
@@ -14,42 +49,24 @@ export const uploadExpenseProof = async (
       }
     }
   );
-
-  return response.data;
 };
+
 
 
 const submitExpense = async () => {
 
   if (!selectedFile) {
-    alert("Please upload receipt");
+    alert("Upload receipt");
     return;
   }
 
-  try {
+  await createExpense(
+    Number(travelId),
+    Number(amount),
+    comment,
+    selectedFile
+  );
 
-    setUploading(true);
-
-    const proofUrl =
-      await uploadExpenseProof(selectedFile);
-
-    await createExpense({
-      travelId: Number(travelId),
-      expenseTypeId: 1,
-      amount: Number(amount),
-      comment,
-      proofUrl
-    });
-
-    alert("Expense submitted");
-
-    navigate("/app/travel");
-
-  } catch (err) {
-    console.error(err);
-  }
-  finally {
-    setUploading(false);
-  }
+  alert("Expense submitted");
+  navigate("/app/travel");
 };
-
