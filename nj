@@ -1,106 +1,142 @@
-<dependency>
-    <groupId>org.springframework.boot</groupId>
-    <artifactId>spring-boot-starter-mail</artifactId>
-</dependency>
+CREATE TABLE notifications(
+    notification_id INT IDENTITY PRIMARY KEY,
+    employee_id INT NOT NULL,
+    title VARCHAR(200),
+    message VARCHAR(500),
+    is_read BIT DEFAULT 0,
+    created_at DATETIME DEFAULT GETDATE()
+);
 
-package com.example.backend.controller;
+package com.example.backend.entity;
 
-import com.example.backend.service.EmailService;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RestController;
+import jakarta.persistence.*;
+import java.util.Date;
 
-@RestController
-public class MailTestController {
+@Entity
+@Table(name="notifications")
+public class Notification {
 
-    @Autowired
-    private EmailService emailService;
+    @Id
+    @GeneratedValue(strategy=GenerationType.IDENTITY)
+    private Integer notificationId;
 
-    @GetMapping("/test-mail")
-    public String testMail(){
+    @ManyToOne
+    @JoinColumn(name="employee_id")
+    private Employee employee;
 
-        emailService.sendMail(
-                "yourreceiver@gmail.com",
-                "Test Mail",
-                "Mail configuration working"
-        );
+    private String title;
+    private String message;
 
-        return "Mail Sent";
-    }
+    @Column(name="is_read")
+    private Boolean isRead=false;
+
+    @Temporal(TemporalType.TIMESTAMP)
+    private Date createdAt=new Date();
+
+    public Integer getNotificationId(){return notificationId;}
+    public Employee getEmployee(){return employee;}
+    public void setEmployee(Employee employee){this.employee=employee;}
+    public String getTitle(){return title;}
+    public void setTitle(String title){this.title=title;}
+    public String getMessage(){return message;}
+    public void setMessage(String message){this.message=message;}
+    public Boolean getIsRead(){return isRead;}
+    public void setIsRead(Boolean read){isRead=read;}
 }
-spring.mail.host=smtp.gmail.com
-spring.mail.port=587
-spring.mail.username=yourmail@gmail.com
-spring.mail.password=your-app-password
-spring.mail.properties.mail.smtp.auth=true
-spring.mail.properties.mail.smtp.starttls.enable=true
+
+
+package com.example.backend.repository;
+
+import com.example.backend.entity.Notification;
+import org.springframework.data.jpa.repository.JpaRepository;
+import java.util.List;
+
+public interface NotificationRepository
+        extends JpaRepository<Notification,Integer>{
+
+    List<Notification>
+    findByEmployeeEmployeeIdOrderByCreatedAtDesc(
+            Integer employeeId);
+}
+
 
 package com.example.backend.service;
 
+import com.example.backend.entity.*;
+import com.example.backend.repository.*;
+
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+
 @Service
-public class EmailService {
+public class NotificationService {
 
     @Autowired
-    private JavaMailSender mailSender;
+    private NotificationRepository notificationRepo;
 
-    public void sendMail(
-            String to,
-            String subject,
-            String body){
+    public void create(
+            Employee employee,
+            String title,
+            String message){
 
-        SimpleMailMessage message =
-                new SimpleMailMessage();
+        Notification n=new Notification();
+        n.setEmployee(employee);
+        n.setTitle(title);
+        n.setMessage(message);
 
-        message.setTo(to);
-        message.setSubject(subject);
-        message.setText(body);
+        notificationRepo.save(n);
+    }
 
-        mailSender.send(message);
+    public List<Notification>
+    getMyNotifications(Integer empId){
+
+        return notificationRepo
+                .findByEmployeeEmployeeIdOrderByCreatedAtDesc(empId);
     }
 }
 
-@Autowired
-private EmailService emailService;
 
-employeeRepository.findAll()
-        .stream()
-        .filter(e ->
-                e.getRole()
-                 .getRoleName()
-                 .equals("HR"))
-        .forEach(hr ->
-                emailService.sendMail(
-                        hr.getEmail(),
-                        "New Expense Submitted",
-                        "Expense submitted by "
-                        + employee.getFullName()
-                        + " for travel "
-                        + travel.getDestination()
-                ));
+package com.example.backend.controller;
 
+import com.example.backend.entity.Notification;
+import com.example.backend.service.NotificationService;
+import com.example.backend.service.ExpenseService;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 
-Employee expenseOwner =
-        expense.getEmployee();
+@RestController
+@RequestMapping("/api/notifications")
+public class NotificationController {
 
-String statusName =
-        status.getApprovalStatusName();
+    @Autowired
+    private NotificationService notificationService;
 
-emailService.sendMail(
-        expenseOwner.getEmail(),
-        "Expense Status Updated",
-        "Your expense is "
-        + statusName
-        + (comment!=null
-           ? "\nRemark: "+comment
-           : "")
-);
+    @Autowired
+    private ExpenseService expenseService;
 
+    @GetMapping("/my")
+    public List<Notification> myNotifications(){
 
+        return notificationService
+                .getMyNotifications(
+                        expenseService
+                        .getLoggedInEmployee()
+                        .getEmployeeId());
+    }
+}
 
+notificationService.create(
+        hr,
+        "New Expense Submitted",
+        employee.getFullName()
+        +" submitted expense");
+
+notificationService.create(
+        expenseOwner,
+        "Expense Updated",
+        "Your expense is "+statusName);
