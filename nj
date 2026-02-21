@@ -1,232 +1,47 @@
-package com.example.backend.entity;
+package com.example.backend.repository;
 
-import jakarta.persistence.*;
-import java.math.BigDecimal;
-import java.util.Date;
+import com.example.backend.entity.ApprovalStatus;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
 
-@Entity
-@Table(name = "expenses_detail")
-public class ExpensesDetail {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "expense_id")
-    private Integer expenseId;
-
-    @ManyToOne
-    @JoinColumn(name = "travel_id")
-    private Travel travel;
-
-    @ManyToOne
-    @JoinColumn(name = "expense_type_id")
-    private ExpensesType expenseType;
-
-    @ManyToOne
-    @JoinColumn(name = "employee_id")
-    private Employee employee;
-
-    @Column(name = "amount")
-    private BigDecimal amount;
-
-    private String comment;
-
-    @Column(name = "proof_url")
-    private String proofUrl;
-
-    @Temporal(TemporalType.DATE)
-    @Column(name = "expense_date")
-    private Date expenseDate;
-
-    @Temporal(TemporalType.DATE)
-    @Column(name = "upload_date")
-    private Date uploadDate;
-
-    @Column(name = "is_deleted")
-    private Boolean isDeleted = false;
-
-    // getters setters
+@Repository
+public interface ApprovalStatusRepository
+        extends JpaRepository<ApprovalStatus, Integer> {
 }
-
 
 package com.example.backend.entity;
 
 import jakarta.persistence.*;
-import java.util.Date;
 
 @Entity
-@Table(name="expenses_review")
-public class ExpensesReview {
+@Table(name = "approval_statuses")
+public class ApprovalStatus {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name="expense_review_id")
-    private Integer id;
+    @Column(name = "approval_status_id")
+    private Integer approvalStatusId;
 
-    @ManyToOne
-    @JoinColumn(name="expense_id")
-    private ExpensesDetail expense;
+    @Column(name = "approval_status_name")
+    private String approvalStatusName;
 
-    @ManyToOne
-    @JoinColumn(name="reviewed_by_id")
-    private Employee reviewedBy;
-
-    @ManyToOne
-    @JoinColumn(name="review_status_id")
-    private ApprovalStatus status;
-
-    private String comment;
-
-    @Temporal(TemporalType.TIMESTAMP)
-    private Date timestamp = new Date();
-
-    @Column(name="is_deleted")
-    private Boolean isDeleted=false;
-
-}
-
-
-@Repository
-public interface ExpensesRepository
-        extends JpaRepository<ExpensesDetail,Integer>{
-
-    List<ExpensesDetail>
-    findByEmployeeEmployeeId(Integer empId);
-
-    List<ExpensesDetail>
-    findByTravelTravelId(Integer travelId);
-}
-
-
-@Repository
-public interface ExpensesReviewRepository
-        extends JpaRepository<ExpensesReview,Integer>{
-
-    ExpensesReview
-    findTopByExpenseExpenseIdOrderByTimestampDesc(Integer expenseId);
-}
-
-
-
-@Service
-public class ExpenseService {
-
-    @Autowired
-    private ExpensesRepository expenseRepo;
-
-    @Autowired
-    private TravelModuleRepository travelRepo;
-
-    @Autowired
-    private EmployeeRepository employeeRepo;
-
-    @Autowired
-    private ApprovalStatusRepository statusRepo;
-
-    @Autowired
-    private ExpensesReviewRepository reviewRepo;
-
-
-    // ================= CREATE DRAFT =================
-    public ExpensesDetail createExpense(
-            Integer travelId,
-            Integer employeeId,
-            Integer expenseTypeId,
-            BigDecimal amount,
-            String comment,
-            String proofUrl,
-            Date expenseDate
-    ){
-
-        if(proofUrl==null || proofUrl.isEmpty())
-            throw new RuntimeException("Proof mandatory");
-
-        Travel travel =
-                travelRepo.findById(travelId.longValue())
-                        .orElseThrow();
-
-        Date today = new Date();
-
-        if(today.before(travel.getDepartDate()))
-            throw new RuntimeException(
-                    "Expense cannot be added before travel start");
-
-        long diff =
-                today.getTime() -
-                travel.getReturnDate().getTime();
-
-        long days = diff/(1000*60*60*24);
-
-        if(days>10)
-            throw new RuntimeException(
-                    "Expense window expired");
-
-        Employee emp =
-                employeeRepo.findById(employeeId.longValue())
-                        .orElseThrow();
-
-        ExpensesDetail expense = new ExpensesDetail();
-        expense.setTravel(travel);
-        expense.setEmployee(emp);
-        expense.setAmount(amount);
-        expense.setComment(comment);
-        expense.setProofUrl(proofUrl);
-        expense.setExpenseDate(expenseDate);
-        expense.setUploadDate(today);
-
-        return expenseRepo.save(expense);
+    public Integer getApprovalStatusId() {
+        return approvalStatusId;
     }
 
-
-    // ================= APPROVE =================
-    public void approveExpense(
-            Integer expenseId,
-            Integer hrId){
-
-        saveReview(expenseId,hrId,2,null);
+    public void setApprovalStatusId(Integer approvalStatusId) {
+        this.approvalStatusId = approvalStatusId;
     }
 
-
-    // ================= REJECT =================
-    public void rejectExpense(
-            Integer expenseId,
-            Integer hrId,
-            String remark){
-
-        if(remark==null)
-            throw new RuntimeException(
-                    "Remark required");
-
-        saveReview(expenseId,hrId,3,remark);
+    public String getApprovalStatusName() {
+        return approvalStatusName;
     }
 
-
-    private void saveReview(
-            Integer expenseId,
-            Integer hrId,
-            Integer statusId,
-            String comment){
-
-        ExpensesDetail expense =
-                expenseRepo.findById(expenseId)
-                        .orElseThrow();
-
-        Employee hr =
-                employeeRepo.findById(hrId.longValue())
-                        .orElseThrow();
-
-        ApprovalStatus status =
-                statusRepo.findById(statusId)
-                        .orElseThrow();
-
-        ExpensesReview review=new ExpensesReview();
-        review.setExpense(expense);
-        review.setReviewedBy(hr);
-        review.setStatus(status);
-        review.setComment(comment);
-
-        reviewRepo.save(review);
+    public void setApprovalStatusName(String approvalStatusName) {
+        this.approvalStatusName = approvalStatusName;
     }
 }
+
 
 @RestController
 @RequestMapping("/api/expenses")
@@ -280,5 +95,4 @@ public class ExpenseController {
         expenseService.rejectExpense(id,hrId,remark);
     }
 }
-
 
