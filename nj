@@ -3,15 +3,31 @@
     <artifactId>spring-boot-starter-mail</artifactId>
 </dependency>
 
-@GetMapping("/test-mail")
-public String testMail(){
-    emailService.sendMail(
-        "receiver@gmail.com",
-        "Test",
-        "Mail working");
-    return "sent";
-}
+package com.example.backend.controller;
 
+import com.example.backend.service.EmailService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+public class MailTestController {
+
+    @Autowired
+    private EmailService emailService;
+
+    @GetMapping("/test-mail")
+    public String testMail(){
+
+        emailService.sendMail(
+                "yourreceiver@gmail.com",
+                "Test Mail",
+                "Mail configuration working"
+        );
+
+        return "Mail Sent";
+    }
+}
 spring.mail.host=smtp.gmail.com
 spring.mail.port=587
 spring.mail.username=yourmail@gmail.com
