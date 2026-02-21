@@ -1,11 +1,96 @@
-CREATE TABLE notifications(
-    notification_id INT IDENTITY PRIMARY KEY,
-    employee_id INT NOT NULL,
-    title VARCHAR(200),
-    message VARCHAR(500),
-    is_read BIT DEFAULT 0,
-    created_at DATETIME DEFAULT GETDATE()
-);
+package com.example.backend.service;
+
+import com.example.backend.entity.Employee;
+import com.example.backend.entity.Notification;
+import com.example.backend.repository.EmployeeRepository;
+import com.example.backend.repository.NotificationRepository;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+
+@Service
+public class NotificationService {
+
+    @Autowired
+    private NotificationRepository notificationRepository;
+
+    @Autowired
+    private EmployeeRepository employeeRepository;
+
+
+    public void create(
+            Employee employee,
+            String title,
+            String message){
+
+        Notification n = new Notification();
+        n.setEmployee(employee);
+        n.setTitle(title);
+        n.setMessage(message);
+
+        notificationRepository.save(n);
+    }
+
+
+    public List<Notification> getMyNotifications(){
+
+        String email =
+                SecurityContextHolder
+                        .getContext()
+                        .getAuthentication()
+                        .getName();
+
+        Employee employee =
+                employeeRepository
+                        .findByEmail(email)
+                        .orElseThrow();
+
+        return notificationRepository
+                .findByEmployeeEmployeeIdOrderByCreatedAtDesc(
+                        employee.getEmployeeId());
+    }
+}
+
+package com.example.backend.controller;
+
+import com.example.backend.entity.Notification;
+import com.example.backend.service.NotificationService;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/notifications")
+public class NotificationController {
+
+    @Autowired
+    private NotificationService notificationService;
+
+    @GetMapping("/my")
+    public List<Notification> myNotifications(){
+        return notificationService.getMyNotifications();
+    }
+}
+
+employeeRepository.findAll()
+        .stream()
+        .filter(e ->
+                e.getRole()
+                 .getRoleName()
+                 .equalsIgnoreCase("HR"))
+        .forEach(hr ->
+                notificationService.create(
+                        hr,
+                        "New Expense Submitted",
+                        employee.getFullName()
+                        +" submitted an expense"));
+
+
 
 package com.example.backend.entity;
 
