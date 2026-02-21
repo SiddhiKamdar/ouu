@@ -1,155 +1,80 @@
-import axiosInstance from "./axiosInstance";
+package com.example.backend.repository;
 
-export const getMyExpenses = async () =>
-  (await axiosInstance.get("/api/expenses/my")).data;
+import com.example.backend.dto.response.EmployeeDTO;
+import com.example.backend.dto.response.OrgChartResponseDTO;
+import com.example.backend.dto.response.OrganizationalHierarchyDTO;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.simple.SimpleJdbcCall;
+import org.springframework.stereotype.Repository;
 
-export const getAllExpenses = async () =>
-  (await axiosInstance.get("/api/expenses")).data;
+import java.util.*;
 
-export const getTeamExpenses = async () =>
-  (await axiosInstance.get("/api/expenses/team")).data;
+@Repository
+public class OrganizationalHierarchyRepository {
 
-export const approveExpense = async (id:number) =>
-  axiosInstance.put(`/api/expenses/${id}/approve`);
+    private final JdbcTemplate jdbcTemplate;
 
-export const rejectExpense = async (
-  id:number,
-  remark:string
-) =>
-  axiosInstance.put(
-    `/api/expenses/${id}/reject`,
-    null,
-    { params:{ remark } }
-  );
+    public OrganizationalHierarchyRepository(JdbcTemplate jdbcTemplate) {
+        this.jdbcTemplate = jdbcTemplate;
+    }
+
+    public OrgChartResponseDTO getHierarchy(int empId) {
+
+        SimpleJdbcCall jdbcCall =
+                new SimpleJdbcCall(jdbcTemplate)
+                        .withProcedureName("pr_orgmod_get_hierarchy");
+
+        Map<String, Object> result =
+                jdbcCall.execute(Map.of("emp_id", empId));
+
+        List<Map<String, Object>> managerRows =
+                (List<Map<String, Object>>) result.get("#result-set-1");
+
+        List<Map<String, Object>> reportRows =
+                (List<Map<String, Object>>) result.get("#result-set-2");
 
 
-import React, { useEffect, useState } from "react";
-import {
-  getMyExpenses,
-  getAllExpenses,
-  getTeamExpenses,
-  approveExpense,
-  rejectExpense
-} from "../services/expenseService";
+        List<OrganizationalHierarchyDTO> managerChain = new ArrayList<>();
 
-const ExpenseDashboard:React.FC = () => {
+        if (managerRows != null) {
+            for (Map<String, Object> row : managerRows) {
 
-  const user =
-    JSON.parse(localStorage.getItem("user")||"{}");
+                managerChain.add(
+                        new OrganizationalHierarchyDTO(
+                                (String) row.get("employee_name"),
+                                (String) row.get("supervision_name"),
+                                (String) row.get("employee_position"),
+                                (String) row.get("supervisior_position"),
+                                (String) row.get("employee_pp"),
+                                (String) row.get("supervisior_pp")
+                        )
+                );
+            }
+        }
 
-  const [expenses,setExpenses] = useState<any[]>([]);
 
-  useEffect(()=>{
-    loadExpenses();
-  },[]);
+        List<EmployeeDTO> directReports = new ArrayList<>();
 
-  const loadExpenses = async () => {
+        if (reportRows != null) {
+            for (Map<String, Object> row : reportRows) {
 
-    let data;
+                EmployeeDTO emp = new EmployeeDTO();
+                emp.setEmployeeId(
+                        ((Number) row.get("employee_id")).intValue()
+                );
+                emp.setName((String) row.get("employee_name"));
+                emp.setDesignation((String) row.get("designation"));
+                emp.setProfilePicture((String) row.get("employee_pp"));
 
-    if(user.role==="HR")
-      data = await getAllExpenses();
-    else if(user.role==="MANAGER")
-      data = await getTeamExpenses();
-    else
-      data = await getMyExpenses();
+                directReports.add(emp);
+            }
+        }
 
-    setExpenses(data);
-  };
 
-  const approve = async(id:number)=>{
-    await approveExpense(id);
-    loadExpenses();
-  };
+        OrgChartResponseDTO response = new OrgChartResponseDTO();
+        response.setManagerChain(managerChain);
+        response.setDirectReports(directReports);
 
-  const reject = async(id:number)=>{
-    const remark =
-      prompt("Reject reason") || "";
-
-    await rejectExpense(id,remark);
-    loadExpenses();
-  };
-
-  return (
-
-    <div className="card p-4">
-
-      <h4>Expense Dashboard</h4>
-
-      <table className="table">
-
-        <thead>
-          <tr>
-            <th>Employee</th>
-            <th>Travel</th>
-            <th>Amount</th>
-            <th>Status</th>
-            <th>Proof</th>
-            {user.role==="HR" && <th>Action</th>}
-          </tr>
-        </thead>
-
-        <tbody>
-
-        {expenses.map(exp=>(
-          <tr key={exp.expenseId}>
-
-            <td>{exp.employeeName}</td>
-            <td>{exp.destination}</td>
-            <td>₹{exp.amount}</td>
-
-            <td>
-              <span className={
-                exp.status==="APPROVED"
-                ?"badge bg-success":
-                exp.status==="REJECTED"
-                ?"badge bg-danger":
-                "badge bg-warning"
-              }>
-                {exp.status}
-              </span>
-            </td>
-
-            <td>
-              <a
-                href={`http://localhost:8080/${exp.proofUrl}`}
-                target="_blank"
-              >
-                View
-              </a>
-            </td>
-
-            {user.role==="HR" && (
-              <td>
-                <button
-                  className="btn btn-success btn-sm me-2"
-                  onClick={()=>approve(exp.expenseId)}
-                >
-                  Approve
-                </button>
-
-                <button
-                  className="btn btn-danger btn-sm"
-                  onClick={()=>reject(exp.expenseId)}
-                >
-                  Reject
-                </button>
-              </td>
-            )}
-
-          </tr>
-        ))}
-
-        </tbody>
-      </table>
-
-    </div>
-  );
-};
-
-export default ExpenseDashboard;
-
-<Route
-  path="expenses"
-  element={<ExpenseDashboard />}
-/>
+        return response;
+    }
+}
