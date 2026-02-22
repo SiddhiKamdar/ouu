@@ -1,112 +1,31 @@
-<Route path="org-chart" element={<OrgChart />} />
+<div className="ms-auto d-flex align-items-center gap-3">
 
-<div
-  onClick={() => navigate(`/app/org-chart/${user.employeeId}`)}
-  className="rounded-circle bg-success text-white d-flex justify-content-center align-items-center"
-  style={{
-    width: "36px",
-    height: "36px",
-    cursor: "pointer"
-  }}
-  title="View Organization Chart"
->
-
-import React, { useEffect, useState } from "react";
-import axios from "axios";
-import { useParams, useNavigate } from "react-router-dom";
-
-const OrgChart: React.FC = () => {
-
-  const { empId } = useParams();
-  const navigate = useNavigate();
-
-  const [data, setData] = useState<any>(null);
-
-  const loadHierarchy = async (id: string) => {
-    try {
-      const res = await axios.get(
-        `http://localhost:8080/api/hierarchy/${id}/hierarchy`
-      );
-      setData(res.data);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  useEffect(() => {
-    if (empId) loadHierarchy(empId);
-  }, [empId]);
-
-  if (!data) return <div>Loading...</div>;
-
-  return (
-    <div>
-
-      <h4 className="mb-4">Organization Chart</h4>
-
-      {/* ================= MANAGER CHAIN ================= */}
-      <div className="mb-5">
-        <h6>Management Chain</h6>
-
-        <div className="d-flex gap-3 flex-wrap">
-          {data.managerChain?.map((m: any, index: number) => (
-            <div
-              key={index}
-              className="card p-3 text-center"
-              style={{ cursor: "pointer", width: "180px" }}
-              onClick={() =>
-                navigate(`/app/org-chart/${m.employeeId}`)
-              }
-            >
-              <img
-                src={m.employeeProfilePicture || "/avatar.png"}
-                alt=""
-                className="rounded-circle mx-auto"
-                width={60}
-                height={60}
-              />
-              <div className="fw-bold mt-2">
-                {m.employeeName}
-              </div>
-              <small>{m.employeePosition}</small>
-            </div>
-          ))}
-        </div>
-      </div>
-
-
-      {/* ================= DIRECT REPORTS ================= */}
-      <div>
-        <h6>Direct Reports</h6>
-
-        <div className="d-flex gap-3 flex-wrap">
-          {data.directReports?.map((emp: any) => (
-            <div
-              key={emp.employeeId}
-              className="card p-3 text-center"
-              style={{ cursor: "pointer", width: "180px" }}
-              onClick={() =>
-                navigate(`/app/org-chart/${emp.employeeId}`)
-              }
-            >
-              <img
-                src={emp.profilePicture || "/avatar.png"}
-                alt=""
-                className="rounded-circle mx-auto"
-                width={60}
-                height={60}
-              />
-              <div className="fw-bold mt-2">
-                {emp.name}
-              </div>
-              <small>{emp.designation}</small>
-            </div>
-          ))}
-        </div>
-      </div>
-
+  <button
+    onClick={() => navigate(`/app/org-chart/${user.employeeId}`)}
+    style={{ border: "none", background: "transparent" }}
+    title="View Organization Chart"
+  >
+    <div
+      className="rounded-circle bg-success text-white d-flex justify-content-center align-items-center"
+      style={{
+        width: "36px",
+        height: "36px",
+        cursor: "pointer"
+      }}
+    >
+      {user?.fullName?.charAt(0) || "U"}
     </div>
-  );
-};
+  </button>
 
-export default OrgChart;
+  <span className="fw-semibold">
+    {user?.fullName || "User"}
+  </span>
+
+  <button
+    className="btn btn-outline-danger btn-sm"
+    onClick={handleLogout}
+  >
+    Logout
+  </button>
+
+</div>
