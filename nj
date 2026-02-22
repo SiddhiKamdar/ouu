@@ -22,7 +22,7 @@ BEGIN
         DECLARE @existing_booking_id INT;
         DECLARE @existing_priority INT;
 
-        SELECT
+        SELECT 
             @slot_date = gs.slot_date,
             @start_time = gst.start_time,
             @game_id = g.game_id
@@ -46,7 +46,7 @@ BEGIN
             + CAST(@start_time AS DATETIME);
 
         SET @minutes_remaining =
-            DATEDIFF(MINUTE, GETDATE(), @slot_datetime);
+            DATEDIFF(MINUTE,GETDATE(),@slot_datetime);
 
         IF @minutes_remaining <= 0
             THROW 50002,'Game already started.',1;
@@ -62,7 +62,7 @@ BEGIN
             THROW 50003,'Leader must be part of team.',1;
 
         -----------------------------------------------------
-        -- duplicate member validation
+        -- duplicate validation
         -----------------------------------------------------
 
         IF EXISTS (
@@ -74,7 +74,7 @@ BEGIN
             THROW 50004,'Duplicate members.',1;
 
         -----------------------------------------------------
-        -- team size validation
+        -- team size validate
         -----------------------------------------------------
 
         DECLARE @team_size INT;
@@ -96,20 +96,20 @@ BEGIN
         IF EXISTS (
             SELECT 1
             FROM booking_master bm
-            JOIN booking_members bmem
+            JOIN booking_members bmem 
                 ON bm.booking_id=bmem.booking_id
-            JOIN @members m
+            JOIN @members m 
                 ON bmem.emp_id=m.emp_id
-            JOIN game_slots gs2
+            JOIN game_slots gs2 
                 ON bm.slot_id=gs2.slot_id
-            JOIN game_slot_templates gst2
+            JOIN game_slot_templates gst2 
                 ON gs2.template_id=gst2.template_id
             WHERE bm.status='CONFIRMED'
               AND gs2.slot_date=@slot_date
               AND gst2.start_time=@start_time
         )
             THROW 50006,
-            'Player already booked for another slot.',1;
+            'One or more players already booked.',1;
 
         -----------------------------------------------------
         -- penalty check
@@ -118,14 +118,14 @@ BEGIN
         IF EXISTS (
             SELECT 1
             FROM employee_penalties ep
-            JOIN @members m
+            JOIN @members m 
                 ON ep.emp_id=m.emp_id
             WHERE ep.restricted_until>GETDATE()
         )
             THROW 50007,'Member restricted.',1;
 
         -----------------------------------------------------
-        -- cycle fetch (kept only for FK safety)
+        -- cycle check 
         -----------------------------------------------------
 
         SELECT @cycle_id = cycle_id
@@ -138,50 +138,49 @@ BEGIN
             INSERT INTO game_cycles(game_id,is_active,started_at)
             VALUES(@game_id,1,GETDATE());
 
-            SET @cycle_id=SCOPE_IDENTITY();
+            SET @cycle_id = SCOPE_IDENTITY();
         END
 
         -----------------------------------------------------
-        -- ensure participation rows exist
+        --participation insert
         -----------------------------------------------------
 
         INSERT INTO cycle_participation
             (cycle_id,game_id,emp_id,play_count)
-        SELECT @cycle_id,@game_id,m.emp_id,0
+        SELECT 
+            @cycle_id,
+            @game_id,
+            m.emp_id,
+            0
         FROM @members m
         WHERE NOT EXISTS (
             SELECT 1
             FROM cycle_participation cp
-            WHERE cp.game_id=@game_id
+            WHERE cp.cycle_id=@cycle_id
               AND cp.emp_id=m.emp_id
         );
 
         -----------------------------------------------------
-        -- ⭐ FAIR PRIORITY USING PLAY COUNT
+        -- priority 
         -----------------------------------------------------
 
-        SELECT
-            @priority_score =
+        SELECT @priority_score =
             1000 - SUM(ISNULL(cp.play_count,0))
-        FROM @members m
-        LEFT JOIN cycle_participation cp
+        FROM cycle_participation cp
+        JOIN @members m 
             ON cp.emp_id=m.emp_id
-           AND cp.game_id=@game_id;
+        WHERE cp.game_id=@game_id;
 
         -----------------------------------------------------
         -- slot status check
         -----------------------------------------------------
 
-        SELECT
+        SELECT 
             @existing_booking_id=booking_id,
             @existing_priority=priority_score
         FROM booking_master
         WHERE slot_id=@slot_id
           AND status='CONFIRMED';
-
-        -----------------------------------------------------
-        -- CONFIRM DIRECTLY
-        -----------------------------------------------------
 
         IF @existing_booking_id IS NULL
         BEGIN
@@ -205,10 +204,6 @@ BEGIN
         END
         ELSE
         BEGIN
-            -------------------------------------------------
-            -- PREEMPT OR QUEUE
-            -------------------------------------------------
-
             IF @priority_score>@existing_priority
                AND @minutes_remaining>10
             BEGIN
@@ -245,109 +240,14 @@ BEGIN
                 INSERT INTO booking_queue_members
                 SELECT @queue_id,emp_id
                 FROM @members;
-
-                PRINT 'Added to queue';
             END
         END
 
         COMMIT TRANSACTION;
-        PRINT 'Application processed successfully';
 
     END TRY
     BEGIN CATCH
         ROLLBACK TRANSACTION;
         THROW;
     END CATCH
-END
-
-CREATE OR ALTER PROCEDURE pr_gamemod_complete_slot
-    @slot_id INT
-AS
-BEGIN
-    SET NOCOUNT ON;
-    SET XACT_ABORT ON;
-
-    BEGIN TRY
-        BEGIN TRANSACTION;
-
-        -----------------------------------------------------
-        -- slot validation
-        -----------------------------------------------------
-
-        DECLARE @booking_id INT;
-        DECLARE @cycle_id INT;
-        DECLARE @game_id INT;
-
-        IF NOT EXISTS (
-            SELECT 1
-            FROM game_slots
-            WHERE slot_id = @slot_id
-        )
-            THROW 70001, 'Invalid slot.', 1;
-
-        SELECT 
-            @booking_id = booking_id,
-            @cycle_id = cycle_id
-        FROM booking_master
-        WHERE slot_id = @slot_id
-          AND status = 'CONFIRMED';
-
-        IF @booking_id IS NULL
-            THROW 70002, 'No confirmed booking found.', 1;
-
-        -----------------------------------------------------
-        -- get game_id
-        -----------------------------------------------------
-
-        SELECT @game_id = g.game_id
-        FROM game_slots gs
-        JOIN game_slot_templates gst 
-            ON gs.template_id = gst.template_id
-        JOIN games g 
-            ON gst.game_id = g.game_id
-        WHERE gs.slot_id = @slot_id;
-
-        -----------------------------------------------------
-        -- mark slot completed
-        -----------------------------------------------------
-
-        UPDATE game_slots
-        SET status = 'COMPLETED'
-        WHERE slot_id = @slot_id;
-
-        UPDATE booking_master
-        SET status = 'COMPLETED'
-        WHERE booking_id = @booking_id;
-
-        -----------------------------------------------------
-        -- ⭐ FAIRNESS UPDATE (PLAY COUNT)
-        -----------------------------------------------------
-
-        UPDATE cp
-        SET 
-            cp.play_count = cp.play_count + 1
-        FROM cycle_participation cp
-        JOIN booking_members bm
-            ON cp.emp_id = bm.emp_id
-        WHERE bm.booking_id = @booking_id
-          AND cp.game_id = @game_id;
-
-        -----------------------------------------------------
-        -- reject remaining queue entries
-        -----------------------------------------------------
-
-        UPDATE booking_queue
-        SET status = 'REJECTED'
-        WHERE slot_id = @slot_id
-          AND status = 'WAITING';
-
-        COMMIT TRANSACTION;
-
-        PRINT 'Slot marked as completed successfully.';
-
-    END TRY
-    BEGIN CATCH
-        ROLLBACK TRANSACTION;
-        THROW;
-    END CATCH;
 END
