@@ -1,33 +1,166 @@
-const buildHierarchy = () => {
+import React, { useEffect, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { getHierarchy } from "../services/hierarchyService";
 
-  if (!data.managerChain?.length) return [];
+const OrgChart: React.FC = () => {
 
-  const chain: any[] = [];
+  const { empId } = useParams();
+  const navigate = useNavigate();
 
-  data.managerChain.forEach((row: any, index: number) => {
+  const [data, setData] = useState<any>(null);
 
-    chain.push({
-      employeeId: row.employeeId,
-      name: row.employeeName,
-      position: row.employeePosition,
-      profilePicture: row.employeeProfilePicture
+  const loadHierarchy = async (id: number) => {
+    try {
+      const res = await getHierarchy(id);
+      setData(res);
+    } catch (err) {
+      console.error("Hierarchy load failed", err);
+    }
+  };
+
+  useEffect(() => {
+    if (empId) {
+      loadHierarchy(Number(empId));
+    }
+  }, [empId]);
+
+  if (!data) return <div>Loading organization chart...</div>;
+
+  const buildHierarchy = () => {
+
+    if (!data.managerChain?.length) return [];
+
+    const chain: any[] = [];
+
+    data.managerChain.forEach((row: any, index: number) => {
+
+      /* ADD EMPLOYEE */
+      chain.push({
+        employeeId: row.employeeId,
+        name: row.employeeName,
+        position: row.employeePosition,
+        profilePicture: row.employeeProfilePicture
+      });
+
+      /* LAST ROW → ADD CEO (SUPERVISOR) */
+      if (
+        index === data.managerChain.length - 1 &&
+        row.supervisiorName
+      ) {
+        chain.push({
+          employeeId: row.supervisiorId ?? 0,
+          name: row.supervisiorName,
+          position: row.supervisiorPosition,
+          profilePicture: row.supervisiorProfilePicture
+        });
+      }
     });
 
-    /* LAST ROW → ADD CEO */
-    if (
-      index === data.managerChain.length - 1 &&
-      row.supervisiorName
-    ) {
-      chain.push({
-        employeeId: row.supervisiorId, // if available
-        name: row.supervisiorName,
-        position: row.supervisiorPosition,
-        profilePicture: row.supervisiorProfilePicture
-      });
-    }
-  });
+    /* CEO SHOULD BE ON TOP */
+    return chain.reverse();
+  };
 
-  return chain.reverse();
+  const hierarchy = buildHierarchy();
+
+  return (
+    <div className="d-flex flex-column align-items-center">
+
+      <h4 className="mb-5 fw-bold">Organization Chart</h4>
+
+      {hierarchy.map((emp: any, index: number) => (
+        <React.Fragment key={index}>
+
+          <div
+            className="card shadow-sm text-center p-3"
+            style={{
+              width: "220px",
+              cursor: emp.employeeId ? "pointer" : "default"
+            }}
+            onClick={() =>
+              emp.employeeId &&
+              navigate(`/app/org-chart/${emp.employeeId}`)
+            }
+          >
+            <img
+              src={emp.profilePicture || "/avatar.png"}
+              alt="profile"
+              className="rounded-circle mx-auto"
+              width={70}
+              height={70}
+            />
+
+            <div className="fw-semibold mt-2">
+              {emp.name}
+            </div>
+
+            <small className="text-muted">
+              {emp.position}
+            </small>
+          </div>
+
+          {/* vertical connector */}
+          {index !== hierarchy.length - 1 && (
+            <div
+              style={{
+                width: "2px",
+                height: "40px",
+                backgroundColor: "#cfcfcf"
+              }}
+            />
+          )}
+
+        </React.Fragment>
+      ))}
+
+
+      {data.directReports?.length > 0 && (
+        <>
+          <div
+            style={{
+              width: "2px",
+              height: "40px",
+              backgroundColor: "#cfcfcf"
+            }}
+          />
+
+          <div className="d-flex gap-4 flex-wrap justify-content-center">
+
+            {data.directReports.map((emp: any) => (
+              <div
+                key={emp.employeeId}
+                className="card shadow-sm text-center p-3"
+                style={{
+                  width: "200px",
+                  cursor: "pointer"
+                }}
+                onClick={() =>
+                  navigate(`/app/org-chart/${emp.employeeId}`)
+                }
+              >
+                <img
+                  src={emp.profilePicture || "/avatar.png"}
+                  alt=""
+                  className="rounded-circle mx-auto"
+                  width={60}
+                  height={60}
+                />
+
+                <div className="fw-semibold mt-2">
+                  {emp.name}
+                </div>
+
+                <small className="text-muted">
+                  {emp.designation}
+                </small>
+              </div>
+            ))}
+
+          </div>
+        </>
+      )}
+
+    </div>
+  );
 };
 
-const hierarchy = buildHierarchy();
+export default OrgChart;
