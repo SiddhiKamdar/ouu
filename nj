@@ -1,126 +1,33 @@
-import React, { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { getHierarchy } from "../services/hierarchyService";
+const buildHierarchy = () => {
 
-const OrgChart: React.FC = () => {
+  if (!data.managerChain?.length) return [];
 
-  const { empId } = useParams();
-  const navigate = useNavigate();
+  const chain: any[] = [];
 
-  const [data, setData] = useState<any>(null);
+  data.managerChain.forEach((row: any, index: number) => {
 
-  const loadHierarchy = async (id: number) => {
-    const res = await getHierarchy(id);
-    setData(res);
-  };
+    chain.push({
+      employeeId: row.employeeId,
+      name: row.employeeName,
+      position: row.employeePosition,
+      profilePicture: row.employeeProfilePicture
+    });
 
-  useEffect(() => {
-    if (empId) loadHierarchy(Number(empId));
-  }, [empId]);
+    /* LAST ROW → ADD CEO */
+    if (
+      index === data.managerChain.length - 1 &&
+      row.supervisiorName
+    ) {
+      chain.push({
+        employeeId: row.supervisiorId, // if available
+        name: row.supervisiorName,
+        position: row.supervisiorPosition,
+        profilePicture: row.supervisiorProfilePicture
+      });
+    }
+  });
 
-  if (!data) return <div>Loading...</div>;
-
-  /* ================= CEO → EMPLOYEE ================= */
-  const hierarchy = [...data.managerChain].reverse();
-
-  return (
-    <div className="d-flex flex-column align-items-center">
-
-      <h4 className="mb-5 fw-bold">Organization Chart</h4>
-
-      {/* ================= MANAGER TREE ================= */}
-      {hierarchy.map((emp: any, index: number) => (
-        <React.Fragment key={index}>
-
-          <div
-            className="card text-center shadow-sm p-3"
-            style={{
-              width: "220px",
-              cursor: "pointer"
-            }}
-            onClick={() =>
-              navigate(`/app/org-chart/${emp.employeeId}`)
-            }
-          >
-            <img
-              src={emp.employeeProfilePicture || "/avatar.png"}
-              className="rounded-circle mx-auto"
-              width={70}
-              height={70}
-            />
-
-            <div className="fw-semibold mt-2">
-              {emp.employeeName}
-            </div>
-
-            <small className="text-muted">
-              {emp.employeePosition}
-            </small>
-          </div>
-
-          {/* vertical connector */}
-          {index !== hierarchy.length - 1 && (
-            <div
-              style={{
-                width: "2px",
-                height: "40px",
-                backgroundColor: "#ccc"
-              }}
-            />
-          )}
-
-        </React.Fragment>
-      ))}
-
-
-      {/* ================= DIRECT REPORTS ================= */}
-      {data.directReports?.length > 0 && (
-        <>
-          <div
-            style={{
-              width: "2px",
-              height: "40px",
-              backgroundColor: "#ccc"
-            }}
-          />
-
-          <div className="d-flex gap-4 flex-wrap justify-content-center">
-
-            {data.directReports.map((emp: any) => (
-              <div
-                key={emp.employeeId}
-                className="card text-center shadow-sm p-3"
-                style={{
-                  width: "200px",
-                  cursor: "pointer"
-                }}
-                onClick={() =>
-                  navigate(`/app/org-chart/${emp.employeeId}`)
-                }
-              >
-                <img
-                  src={emp.profilePicture || "/avatar.png"}
-                  className="rounded-circle mx-auto"
-                  width={60}
-                  height={60}
-                />
-
-                <div className="fw-semibold mt-2">
-                  {emp.name}
-                </div>
-
-                <small className="text-muted">
-                  {emp.designation}
-                </small>
-              </div>
-            ))}
-
-          </div>
-        </>
-      )}
-
-    </div>
-  );
+  return chain.reverse();
 };
 
-export default OrgChart;
+const hierarchy = buildHierarchy();
