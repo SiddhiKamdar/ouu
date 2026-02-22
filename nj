@@ -1,31 +1,135 @@
-<div className="ms-auto d-flex align-items-center gap-3">
+import axios from "../api/axiosInstance";
 
-  <button
-    onClick={() => navigate(`/app/org-chart/${user.employeeId}`)}
-    style={{ border: "none", background: "transparent" }}
-    title="View Organization Chart"
-  >
-    <div
-      className="rounded-circle bg-success text-white d-flex justify-content-center align-items-center"
-      style={{
-        width: "36px",
-        height: "36px",
-        cursor: "pointer"
-      }}
-    >
-      {user?.fullName?.charAt(0) || "U"}
+export const getHierarchy = async (empId: number) => {
+  const response = await axios.get(
+    `/api/hierarchy/${empId}/hierarchy`
+  );
+
+  return response.data;
+};
+
+import React, { useEffect, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { getHierarchy } from "../services/hierarchyService";
+
+const OrgChart: React.FC = () => {
+
+  const { empId } = useParams();
+  const navigate = useNavigate();
+
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  const loadHierarchy = async (id: number) => {
+    try {
+      setLoading(true);
+      const response = await getHierarchy(id);
+      setData(response);
+    } catch (error) {
+      console.error("Hierarchy load failed:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (empId) {
+      loadHierarchy(Number(empId));
+    }
+  }, [empId]);
+
+  if (loading) {
+    return <div className="text-center">Loading organization chart...</div>;
+  }
+
+  if (!data) {
+    return <div>No hierarchy data found.</div>;
+  }
+
+  return (
+    <div>
+
+      <h4 className="mb-4 fw-bold">Organization Chart</h4>
+
+      <div className="mb-5">
+
+        <h6 className="mb-3">Management Chain</h6>
+
+        <div className="d-flex flex-wrap gap-3">
+
+          {data.managerChain?.map((manager: any, index: number) => (
+            <div
+              key={index}
+              className="card shadow-sm text-center p-3"
+              style={{ width: "180px", cursor: "pointer" }}
+              onClick={() =>
+                navigate(`/app/org-chart/${manager.employeeId}`)
+              }
+            >
+              <img
+                src={
+                  manager.employeeProfilePicture ||
+                  "/avatar.png"
+                }
+                alt="profile"
+                className="rounded-circle mx-auto"
+                width={60}
+                height={60}
+              />
+
+              <div className="fw-semibold mt-2">
+                {manager.employeeName}
+              </div>
+
+              <small className="text-muted">
+                {manager.employeePosition}
+              </small>
+            </div>
+          ))}
+
+        </div>
+      </div>
+
+
+      <div>
+
+        <h6 className="mb-3">Direct Reports</h6>
+
+        <div className="d-flex flex-wrap gap-3">
+
+          {data.directReports?.map((emp: any) => (
+            <div
+              key={emp.employeeId}
+              className="card shadow-sm text-center p-3"
+              style={{ width: "180px", cursor: "pointer" }}
+              onClick={() =>
+                navigate(`/app/org-chart/${emp.employeeId}`)
+              }
+            >
+              <img
+                src={emp.profilePicture || "/avatar.png"}
+                alt="profile"
+                className="rounded-circle mx-auto"
+                width={60}
+                height={60}
+              />
+
+              <div className="fw-semibold mt-2">
+                {emp.name}
+              </div>
+
+              <small className="text-muted">
+                {emp.designation}
+              </small>
+            </div>
+          ))}
+
+        </div>
+
+      </div>
+
     </div>
-  </button>
+  );
+};
 
-  <span className="fw-semibold">
-    {user?.fullName || "User"}
-  </span>
-
-  <button
-    className="btn btn-outline-danger btn-sm"
-    onClick={handleLogout}
-  >
-    Logout
-  </button>
-
-</div>
+export default OrgChart;
