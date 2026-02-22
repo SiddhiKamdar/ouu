@@ -1,80 +1,112 @@
-package com.example.backend.repository;
+<Route path="org-chart" element={<OrgChart />} />
 
-import com.example.backend.dto.response.EmployeeDTO;
-import com.example.backend.dto.response.OrgChartResponseDTO;
-import com.example.backend.dto.response.OrganizationalHierarchyDTO;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.core.simple.SimpleJdbcCall;
-import org.springframework.stereotype.Repository;
+<div
+  onClick={() => navigate(`/app/org-chart/${user.employeeId}`)}
+  className="rounded-circle bg-success text-white d-flex justify-content-center align-items-center"
+  style={{
+    width: "36px",
+    height: "36px",
+    cursor: "pointer"
+  }}
+  title="View Organization Chart"
+>
 
-import java.util.*;
+import React, { useEffect, useState } from "react";
+import axios from "axios";
+import { useParams, useNavigate } from "react-router-dom";
 
-@Repository
-public class OrganizationalHierarchyRepository {
+const OrgChart: React.FC = () => {
 
-    private final JdbcTemplate jdbcTemplate;
+  const { empId } = useParams();
+  const navigate = useNavigate();
 
-    public OrganizationalHierarchyRepository(JdbcTemplate jdbcTemplate) {
-        this.jdbcTemplate = jdbcTemplate;
+  const [data, setData] = useState<any>(null);
+
+  const loadHierarchy = async (id: string) => {
+    try {
+      const res = await axios.get(
+        `http://localhost:8080/api/hierarchy/${id}/hierarchy`
+      );
+      setData(res.data);
+    } catch (err) {
+      console.error(err);
     }
+  };
 
-    public OrgChartResponseDTO getHierarchy(int empId) {
+  useEffect(() => {
+    if (empId) loadHierarchy(empId);
+  }, [empId]);
 
-        SimpleJdbcCall jdbcCall =
-                new SimpleJdbcCall(jdbcTemplate)
-                        .withProcedureName("pr_orgmod_get_hierarchy");
+  if (!data) return <div>Loading...</div>;
 
-        Map<String, Object> result =
-                jdbcCall.execute(Map.of("emp_id", empId));
+  return (
+    <div>
 
-        List<Map<String, Object>> managerRows =
-                (List<Map<String, Object>>) result.get("#result-set-1");
+      <h4 className="mb-4">Organization Chart</h4>
 
-        List<Map<String, Object>> reportRows =
-                (List<Map<String, Object>>) result.get("#result-set-2");
+      {/* ================= MANAGER CHAIN ================= */}
+      <div className="mb-5">
+        <h6>Management Chain</h6>
 
-
-        List<OrganizationalHierarchyDTO> managerChain = new ArrayList<>();
-
-        if (managerRows != null) {
-            for (Map<String, Object> row : managerRows) {
-
-                managerChain.add(
-                        new OrganizationalHierarchyDTO(
-                                (String) row.get("employee_name"),
-                                (String) row.get("supervision_name"),
-                                (String) row.get("employee_position"),
-                                (String) row.get("supervisior_position"),
-                                (String) row.get("employee_pp"),
-                                (String) row.get("supervisior_pp")
-                        )
-                );
-            }
-        }
-
-
-        List<EmployeeDTO> directReports = new ArrayList<>();
-
-        if (reportRows != null) {
-            for (Map<String, Object> row : reportRows) {
-
-                EmployeeDTO emp = new EmployeeDTO();
-                emp.setEmployeeId(
-                        ((Number) row.get("employee_id")).intValue()
-                );
-                emp.setName((String) row.get("employee_name"));
-                emp.setDesignation((String) row.get("designation"));
-                emp.setProfilePicture((String) row.get("employee_pp"));
-
-                directReports.add(emp);
-            }
-        }
+        <div className="d-flex gap-3 flex-wrap">
+          {data.managerChain?.map((m: any, index: number) => (
+            <div
+              key={index}
+              className="card p-3 text-center"
+              style={{ cursor: "pointer", width: "180px" }}
+              onClick={() =>
+                navigate(`/app/org-chart/${m.employeeId}`)
+              }
+            >
+              <img
+                src={m.employeeProfilePicture || "/avatar.png"}
+                alt=""
+                className="rounded-circle mx-auto"
+                width={60}
+                height={60}
+              />
+              <div className="fw-bold mt-2">
+                {m.employeeName}
+              </div>
+              <small>{m.employeePosition}</small>
+            </div>
+          ))}
+        </div>
+      </div>
 
 
-        OrgChartResponseDTO response = new OrgChartResponseDTO();
-        response.setManagerChain(managerChain);
-        response.setDirectReports(directReports);
+      {/* ================= DIRECT REPORTS ================= */}
+      <div>
+        <h6>Direct Reports</h6>
 
-        return response;
-    }
-}
+        <div className="d-flex gap-3 flex-wrap">
+          {data.directReports?.map((emp: any) => (
+            <div
+              key={emp.employeeId}
+              className="card p-3 text-center"
+              style={{ cursor: "pointer", width: "180px" }}
+              onClick={() =>
+                navigate(`/app/org-chart/${emp.employeeId}`)
+              }
+            >
+              <img
+                src={emp.profilePicture || "/avatar.png"}
+                alt=""
+                className="rounded-circle mx-auto"
+                width={60}
+                height={60}
+              />
+              <div className="fw-bold mt-2">
+                {emp.name}
+              </div>
+              <small>{emp.designation}</small>
+            </div>
+          ))}
+        </div>
+      </div>
+
+    </div>
+  );
+};
+
+export default OrgChart;
