@@ -1,133 +1,353 @@
-import React, { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
-import { getHierarchy } from "../services/hierarchyService";
+CREATE OR ALTER PROCEDURE pr_gamemod_apply_for_slot
+    @slot_id INT,
+    @leader_emp_id INT,
+    @members TeamMemberTableType READONLY
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
 
-const OrgChart: React.FC = () => {
+    BEGIN TRY
+        BEGIN TRANSACTION;
 
-  const { empId } = useParams();
+        -----------------------------------------------------
+        -- slot validate
+        -----------------------------------------------------
 
-  const [managerData, setManagerData] = useState<any[]>([]);
-  const [directReports, setDirectReports] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+        DECLARE @slot_date DATE;
+        DECLARE @start_time TIME;
+        DECLARE @game_id INT;
+        DECLARE @cycle_id INT;
+        DECLARE @priority_score INT;
+        DECLARE @existing_booking_id INT;
+        DECLARE @existing_priority INT;
 
-  useEffect(() => {
-    if (empId) loadHierarchy(Number(empId));
-  }, [empId]);
+        SELECT
+            @slot_date = gs.slot_date,
+            @start_time = gst.start_time,
+            @game_id = g.game_id
+        FROM game_slots gs
+        JOIN game_slot_templates gst ON gs.template_id = gst.template_id
+        JOIN games g ON gst.game_id = g.game_id
+        WHERE gs.slot_id = @slot_id;
 
-  const loadHierarchy = async (id: number) => {
-    try {
-      const res = await getHierarchy(id);
+        IF @slot_date IS NULL
+            THROW 50001,'Invalid slot.',1;
 
-      // depending on backend response
-      setManagerData(res.managerChain || res);
-      setDirectReports(res.directReports || []);
+        -----------------------------------------------------
+        -- time validation
+        -----------------------------------------------------
 
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
+        DECLARE @slot_datetime DATETIME;
+        DECLARE @minutes_remaining INT;
 
-  if (loading) return <div>Loading...</div>;
+        SET @slot_datetime =
+            CAST(@slot_date AS DATETIME)
+            + CAST(@start_time AS DATETIME);
 
+        SET @minutes_remaining =
+            DATEDIFF(MINUTE, GETDATE(), @slot_datetime);
 
-  const managers: any[] = [];
+        IF @minutes_remaining <= 0
+            THROW 50002,'Game already started.',1;
 
-  const lastRow =
-    managerData[managerData.length - 1];
+        -----------------------------------------------------
+        -- leader validation
+        -----------------------------------------------------
 
-  if (lastRow?.supervisiorName) {
-    managers.push({
-      name: lastRow.supervisiorName,
-      position: lastRow.supervisiorPosition,
-      picture: lastRow.supervisiorProfilePicture
-    });
-  }
+        IF NOT EXISTS (
+            SELECT 1 FROM @members
+            WHERE emp_id=@leader_emp_id
+        )
+            THROW 50003,'Leader must be part of team.',1;
 
-  managerData.forEach((row: any) => {
-    managers.push({
-      name: row.employeeName,
-      position: row.employeePosition,
-      picture: row.employeeProfilePicture
-    });
-  });
+        -----------------------------------------------------
+        -- duplicate member validation
+        -----------------------------------------------------
 
-  managers.reverse();
+        IF EXISTS (
+            SELECT emp_id
+            FROM @members
+            GROUP BY emp_id
+            HAVING COUNT(*)>1
+        )
+            THROW 50004,'Duplicate members.',1;
 
-  const selectedEmployee =
-    managers[managers.length - 1];
+        -----------------------------------------------------
+        -- team size validation
+        -----------------------------------------------------
 
-  const managerChain =
-    managers.slice(0, managers.length - 1);
+        DECLARE @team_size INT;
+        SELECT @team_size = COUNT(*) FROM @members;
 
+        IF NOT EXISTS (
+            SELECT 1
+            FROM game_allowed_configurations
+            WHERE game_id=@game_id
+              AND allowed_player_count=@team_size
+              AND is_active=1
+        )
+            THROW 50005,'Invalid team size.',1;
 
-  return (
-    <div className="d-flex flex-column align-items-center">
+        -----------------------------------------------------
+        -- double booking validation
+        -----------------------------------------------------
 
-      <h4 className="mb-5">Organization Chart</h4>
+        IF EXISTS (
+            SELECT 1
+            FROM booking_master bm
+            JOIN booking_members bmem
+                ON bm.booking_id=bmem.booking_id
+            JOIN @members m
+                ON bmem.emp_id=m.emp_id
+            JOIN game_slots gs2
+                ON bm.slot_id=gs2.slot_id
+            JOIN game_slot_templates gst2
+                ON gs2.template_id=gst2.template_id
+            WHERE bm.status='CONFIRMED'
+              AND gs2.slot_date=@slot_date
+              AND gst2.start_time=@start_time
+        )
+            THROW 50006,
+            'Player already booked for another slot.',1;
 
-      {managerChain.map((emp, index) => (
-        <React.Fragment key={index}>
-          <EmployeeCard emp={emp} />
-          <Connector />
-        </React.Fragment>
-      ))}
+        -----------------------------------------------------
+        -- penalty check
+        -----------------------------------------------------
 
-      {selectedEmployee && (
-        <>
-          <EmployeeCard emp={selectedEmployee} highlight />
-          <Connector />
-        </>
-      )}
+        IF EXISTS (
+            SELECT 1
+            FROM employee_penalties ep
+            JOIN @members m
+                ON ep.emp_id=m.emp_id
+            WHERE ep.restricted_until>GETDATE()
+        )
+            THROW 50007,'Member restricted.',1;
 
-      {/* ===== DIRECT REPORTS ===== */}
-      {directReports.length > 0 && (
-        <div className="d-flex gap-4 flex-wrap justify-content-center">
-          {directReports.map((emp, i) => (
-            <EmployeeCard
-              key={i}
-              emp={{
-                name: emp.name,
-                position: emp.designation,
-                picture: emp.profilePicture
-              }}
-            />
-          ))}
-        </div>
-      )}
+        -----------------------------------------------------
+        -- cycle fetch (kept only for FK safety)
+        -----------------------------------------------------
 
-    </div>
-  );
-};
+        SELECT @cycle_id = cycle_id
+        FROM game_cycles
+        WHERE game_id=@game_id
+          AND is_active=1;
 
+        IF @cycle_id IS NULL
+        BEGIN
+            INSERT INTO game_cycles(game_id,is_active,started_at)
+            VALUES(@game_id,1,GETDATE());
 
-const EmployeeCard = ({ emp, highlight = false }: any) => (
-  <div
-    className={`card text-center shadow-sm p-3 ${
-      highlight ? "border-success border-2" : ""
-    }`}
-    style={{ width: "220px" }}
-  >
-    <img
-      src={emp.picture || "/avatar.png"}
-      className="rounded-circle mx-auto"
-      width={70}
-      height={70}
-    />
-    <div className="fw-semibold mt-2">{emp.name}</div>
-    <small>{emp.position}</small>
-  </div>
-);
+            SET @cycle_id=SCOPE_IDENTITY();
+        END
 
-const Connector = () => (
-  <div
-    style={{
-      width: "2px",
-      height: "40px",
-      backgroundColor: "#ccc"
-    }}
-  />
-);
+        -----------------------------------------------------
+        -- ensure participation rows exist
+        -----------------------------------------------------
 
-export default OrgChart;
+        INSERT INTO cycle_participation
+            (cycle_id,game_id,emp_id,play_count)
+        SELECT @cycle_id,@game_id,m.emp_id,0
+        FROM @members m
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM cycle_participation cp
+            WHERE cp.game_id=@game_id
+              AND cp.emp_id=m.emp_id
+        );
+
+        -----------------------------------------------------
+        -- ⭐ FAIR PRIORITY USING PLAY COUNT
+        -----------------------------------------------------
+
+        SELECT
+            @priority_score =
+            1000 - SUM(ISNULL(cp.play_count,0))
+        FROM @members m
+        LEFT JOIN cycle_participation cp
+            ON cp.emp_id=m.emp_id
+           AND cp.game_id=@game_id;
+
+        -----------------------------------------------------
+        -- slot status check
+        -----------------------------------------------------
+
+        SELECT
+            @existing_booking_id=booking_id,
+            @existing_priority=priority_score
+        FROM booking_master
+        WHERE slot_id=@slot_id
+          AND status='CONFIRMED';
+
+        -----------------------------------------------------
+        -- CONFIRM DIRECTLY
+        -----------------------------------------------------
+
+        IF @existing_booking_id IS NULL
+        BEGIN
+            INSERT INTO booking_master
+            (slot_id,leader_emp_id,cycle_id,
+             team_size,priority_score,status,created_at)
+            VALUES
+            (@slot_id,@leader_emp_id,@cycle_id,
+             @team_size,@priority_score,
+             'CONFIRMED',GETDATE());
+
+            DECLARE @new_booking_id INT=SCOPE_IDENTITY();
+
+            INSERT INTO booking_members
+            SELECT @new_booking_id,emp_id
+            FROM @members;
+
+            UPDATE game_slots
+            SET status='BOOKED'
+            WHERE slot_id=@slot_id;
+        END
+        ELSE
+        BEGIN
+            -------------------------------------------------
+            -- PREEMPT OR QUEUE
+            -------------------------------------------------
+
+            IF @priority_score>@existing_priority
+               AND @minutes_remaining>10
+            BEGIN
+                UPDATE booking_master
+                SET status='PREEMPTED'
+                WHERE booking_id=@existing_booking_id;
+
+                INSERT INTO booking_master
+                (slot_id,leader_emp_id,cycle_id,
+                 team_size,priority_score,status,created_at)
+                VALUES
+                (@slot_id,@leader_emp_id,@cycle_id,
+                 @team_size,@priority_score,
+                 'CONFIRMED',GETDATE());
+
+                DECLARE @new_booking_id2 INT=SCOPE_IDENTITY();
+
+                INSERT INTO booking_members
+                SELECT @new_booking_id2,emp_id
+                FROM @members;
+            END
+            ELSE
+            BEGIN
+                INSERT INTO booking_queue
+                (slot_id,leader_emp_id,cycle_id,
+                 team_size,priority_score,status,created_at)
+                VALUES
+                (@slot_id,@leader_emp_id,@cycle_id,
+                 @team_size,@priority_score,
+                 'WAITING',GETDATE());
+
+                DECLARE @queue_id INT=SCOPE_IDENTITY();
+
+                INSERT INTO booking_queue_members
+                SELECT @queue_id,emp_id
+                FROM @members;
+
+                PRINT 'Added to queue';
+            END
+        END
+
+        COMMIT TRANSACTION;
+        PRINT 'Application processed successfully';
+
+    END TRY
+    BEGIN CATCH
+        ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END
+
+CREATE OR ALTER PROCEDURE pr_gamemod_complete_slot
+    @slot_id INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        -----------------------------------------------------
+        -- slot validation
+        -----------------------------------------------------
+
+        DECLARE @booking_id INT;
+        DECLARE @cycle_id INT;
+        DECLARE @game_id INT;
+
+        IF NOT EXISTS (
+            SELECT 1
+            FROM game_slots
+            WHERE slot_id = @slot_id
+        )
+            THROW 70001, 'Invalid slot.', 1;
+
+        SELECT 
+            @booking_id = booking_id,
+            @cycle_id = cycle_id
+        FROM booking_master
+        WHERE slot_id = @slot_id
+          AND status = 'CONFIRMED';
+
+        IF @booking_id IS NULL
+            THROW 70002, 'No confirmed booking found.', 1;
+
+        -----------------------------------------------------
+        -- get game_id
+        -----------------------------------------------------
+
+        SELECT @game_id = g.game_id
+        FROM game_slots gs
+        JOIN game_slot_templates gst 
+            ON gs.template_id = gst.template_id
+        JOIN games g 
+            ON gst.game_id = g.game_id
+        WHERE gs.slot_id = @slot_id;
+
+        -----------------------------------------------------
+        -- mark slot completed
+        -----------------------------------------------------
+
+        UPDATE game_slots
+        SET status = 'COMPLETED'
+        WHERE slot_id = @slot_id;
+
+        UPDATE booking_master
+        SET status = 'COMPLETED'
+        WHERE booking_id = @booking_id;
+
+        -----------------------------------------------------
+        -- ⭐ FAIRNESS UPDATE (PLAY COUNT)
+        -----------------------------------------------------
+
+        UPDATE cp
+        SET 
+            cp.play_count = cp.play_count + 1
+        FROM cycle_participation cp
+        JOIN booking_members bm
+            ON cp.emp_id = bm.emp_id
+        WHERE bm.booking_id = @booking_id
+          AND cp.game_id = @game_id;
+
+        -----------------------------------------------------
+        -- reject remaining queue entries
+        -----------------------------------------------------
+
+        UPDATE booking_queue
+        SET status = 'REJECTED'
+        WHERE slot_id = @slot_id
+          AND status = 'WAITING';
+
+        COMMIT TRANSACTION;
+
+        PRINT 'Slot marked as completed successfully.';
+
+    END TRY
+    BEGIN CATCH
+        ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH;
+END
