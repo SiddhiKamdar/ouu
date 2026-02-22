@@ -1,22 +1,11 @@
 import React, { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { getHierarchy } from "../services/hierarchyService";
 
 const OrgChart: React.FC = () => {
 
   const { empId } = useParams();
-  const navigate = useNavigate();
-
   const [data, setData] = useState<any>(null);
-
-  const loadHierarchy = async (id: number) => {
-    try {
-      const res = await getHierarchy(id);
-      setData(res);
-    } catch (err) {
-      console.error("Hierarchy load failed", err);
-    }
-  };
 
   useEffect(() => {
     if (empId) {
@@ -24,7 +13,17 @@ const OrgChart: React.FC = () => {
     }
   }, [empId]);
 
-  if (!data) return <div>Loading organization chart...</div>;
+  const loadHierarchy = async (id: number) => {
+    try {
+      const res = await getHierarchy(id);
+      setData(res);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  if (!data) return <div>Loading...</div>;
+
 
   const buildHierarchy = () => {
 
@@ -32,31 +31,27 @@ const OrgChart: React.FC = () => {
 
     const chain: any[] = [];
 
-    data.managerChain.forEach((row: any, index: number) => {
+    data.managerChain.forEach((row: any) => {
 
-      /* ADD EMPLOYEE */
       chain.push({
-        employeeId: row.employeeId,
         name: row.employeeName,
         position: row.employeePosition,
-        profilePicture: row.employeeProfilePicture
+        picture: row.employeeProfilePicture
       });
 
-      /* LAST ROW → ADD CEO (SUPERVISOR) */
-      if (
-        index === data.managerChain.length - 1 &&
-        row.supervisiorName
-      ) {
-        chain.push({
-          employeeId: row.supervisiorId ?? 0,
-          name: row.supervisiorName,
-          position: row.supervisiorPosition,
-          profilePicture: row.supervisiorProfilePicture
-        });
-      }
     });
 
-    /* CEO SHOULD BE ON TOP */
+    const lastRow =
+      data.managerChain[data.managerChain.length - 1];
+
+    if (lastRow?.supervisiorName) {
+      chain.push({
+        name: lastRow.supervisiorName,
+        position: lastRow.supervisiorPosition,
+        picture: lastRow.supervisiorProfilePicture
+      });
+    }
+
     return chain.reverse();
   };
 
@@ -65,46 +60,35 @@ const OrgChart: React.FC = () => {
   return (
     <div className="d-flex flex-column align-items-center">
 
-      <h4 className="mb-5 fw-bold">Organization Chart</h4>
+      <h4 className="mb-5">Organization Chart</h4>
 
       {hierarchy.map((emp: any, index: number) => (
         <React.Fragment key={index}>
 
           <div
-            className="card shadow-sm text-center p-3"
-            style={{
-              width: "220px",
-              cursor: emp.employeeId ? "pointer" : "default"
-            }}
-            onClick={() =>
-              emp.employeeId &&
-              navigate(`/app/org-chart/${emp.employeeId}`)
-            }
+            className="card text-center shadow-sm p-3"
+            style={{ width: "220px" }}
           >
             <img
-              src={emp.profilePicture || "/avatar.png"}
-              alt="profile"
+              src={emp.picture || "/avatar.png"}
               className="rounded-circle mx-auto"
               width={70}
               height={70}
             />
 
-            <div className="fw-semibold mt-2">
+            <div className="fw-bold mt-2">
               {emp.name}
             </div>
 
-            <small className="text-muted">
-              {emp.position}
-            </small>
+            <small>{emp.position}</small>
           </div>
 
-          {/* vertical connector */}
           {index !== hierarchy.length - 1 && (
             <div
               style={{
                 width: "2px",
                 height: "40px",
-                backgroundColor: "#cfcfcf"
+                background: "#ccc"
               }}
             />
           )}
@@ -112,46 +96,36 @@ const OrgChart: React.FC = () => {
         </React.Fragment>
       ))}
 
-
       {data.directReports?.length > 0 && (
         <>
           <div
             style={{
               width: "2px",
               height: "40px",
-              backgroundColor: "#cfcfcf"
+              background: "#ccc"
             }}
           />
 
           <div className="d-flex gap-4 flex-wrap justify-content-center">
 
-            {data.directReports.map((emp: any) => (
+            {data.directReports.map((emp: any, i: number) => (
               <div
-                key={emp.employeeId}
-                className="card shadow-sm text-center p-3"
-                style={{
-                  width: "200px",
-                  cursor: "pointer"
-                }}
-                onClick={() =>
-                  navigate(`/app/org-chart/${emp.employeeId}`)
-                }
+                key={i}
+                className="card text-center shadow-sm p-3"
+                style={{ width: "200px" }}
               >
                 <img
                   src={emp.profilePicture || "/avatar.png"}
-                  alt=""
                   className="rounded-circle mx-auto"
                   width={60}
                   height={60}
                 />
 
-                <div className="fw-semibold mt-2">
+                <div className="fw-bold mt-2">
                   {emp.name}
                 </div>
 
-                <small className="text-muted">
-                  {emp.designation}
-                </small>
+                <small>{emp.designation}</small>
               </div>
             ))}
 
